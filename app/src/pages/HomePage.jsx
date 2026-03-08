@@ -105,12 +105,17 @@ export function HomePage() {
         )}
         <h1 className="tracking-wide flex items-baseline justify-center gap-3">
           <span
-            className="scoreboard-flicker text-4xl md:text-5xl"
+            className="scoreboard-flicker text-4xl md:text-5xl cursor-pointer select-none"
             style={{
               fontFamily: "'Orbitron', sans-serif",
               fontWeight: 900,
               letterSpacing: '0.12em',
               color: '#f97316',
+            }}
+            onClick={() => {
+              setBallKey((k) => k + 1);
+              setShowBall(true);
+              setTimeout(() => setShowBall(false), 1700);
             }}
           >
             VBSTAT
@@ -197,7 +202,19 @@ export function HomePage() {
 
         {/* Recent matches */}
         <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-2">Recent Matches</h2>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">
+              Recent Matches
+              {displayMatches.length > 0 && (
+                <span className="ml-1.5 text-[10px] font-bold bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-full">{displayMatches.length}</span>
+              )}
+            </h2>
+            {displayMatches.length > 0 && (
+              <button onClick={() => navigate('/seasons')} className="text-xs text-primary hover:text-orange-300 transition-colors">
+                See all →
+              </button>
+            )}
+          </div>
           {displayMatches.length === 0 && (
             <EmptyState
               icon="🏐"
@@ -229,8 +246,26 @@ export function HomePage() {
               >
                 <div>
                   <div className="font-semibold">{match.opponent_name ?? 'vs. Unknown'}</div>
-                  <div className="text-xs text-slate-400">
-                    {match.season ? `${match.season.name ?? match.season.year} · ` : ''}{fmtDate(match.date)}
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    {match.location && (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                        match.location === 'home'    ? 'bg-emerald-900/50 text-emerald-400' :
+                        match.location === 'away'    ? 'bg-red-900/50 text-red-400' :
+                                                       'bg-slate-700 text-slate-400'
+                      }`}>
+                        {match.location === 'home' ? 'H' : match.location === 'away' ? 'A' : 'N'}
+                      </span>
+                    )}
+                    {match.conference && (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                        match.conference === 'conference' ? 'bg-blue-900/50 text-blue-400' : 'bg-slate-700 text-slate-400'
+                      }`}>
+                        {match.conference === 'conference' ? 'CON' : 'NC'}
+                      </span>
+                    )}
+                    <span className="text-xs text-slate-400">
+                      {match.season ? `${match.season.name ?? match.season.year} · ` : ''}{fmtDate(match.date)}
+                    </span>
                   </div>
                 </div>
                 <div className="text-right flex flex-col items-end gap-1">
