@@ -342,3 +342,45 @@
 .timeout-pip-pop {
   animation: timeout-pip-pop 360ms var(--ease-spring) both;
 }
+
+/* ── Sonar ring on active match banner ── */
+@keyframes sonar-ring {
+  0%   { transform: scale(1);    opacity: 0.7; }
+  100% { transform: scale(1.06); opacity: 0;   }
+}
+.sonar-ring {
+  position: relative;
+}
+.sonar-ring::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 2px solid #f97316;
+  animation: sonar-ring 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+/* ── Ball bounce for empty state ── */
+@keyframes ball-bounce {
+  0%   { transform: translateY(-36px); animation-timing-function: ease-in; }
+  38%  { transform: translateY(0);     animation-timing-function: ease-out; }
+  53%  { transform: translateY(-16px); animation-timing-function: ease-in; }
+  68%  { transform: translateY(0);     animation-timing-function: ease-out; }
+  80%  { transform: translateY(-7px);  animation-timing-function: ease-in; }
+  90%  { transform: translateY(0);     animation-timing-function: ease-out; }
+  96%  { transform: translateY(-3px);  animation-timing-function: ease-in; }
+  100% { transform: translateY(0); }
+}
+.animate-ball-bounce {
+  animation: ball-bounce 0.85s both;
+}
+
+/* ── FAB breathing glow ── */
+@keyframes fab-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(249,115,22,0),    0 4px 14px rgba(0,0,0,0.4); }
+  50%       { box-shadow: 0 0 0 7px rgba(249,115,22,0.3), 0 4px 14px rgba(249,115,22,0.25); }
+}
+.fab-glow {
+  animation: fab-breathe 2s ease-in-out infinite;
+}
