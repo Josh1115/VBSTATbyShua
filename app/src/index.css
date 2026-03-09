@@ -221,15 +221,43 @@
   animation: stat-chip-bump 220ms var(--ease-spring) both;
 }
 
-/* ── Score digit scale pop (item 1) ── */
-@keyframes score-pop {
-  0%   { transform: scale(0.72); opacity: 0.5; }
-  52%  { transform: scale(1.2);  opacity: 1;   }
-  78%  { transform: scale(0.95);               }
-  100% { transform: scale(1);    opacity: 1;   }
+/* ── Score digit slot-machine roll-in ── */
+@keyframes score-flip-in {
+  0%   { transform: translateY(65%) scaleY(0.75); opacity: 0;   }
+  58%  { transform: translateY(-6%) scaleY(1.06); opacity: 1;   }
+  78%  { transform: translateY(2%)  scaleY(0.98);               }
+  100% { transform: translateY(0)   scaleY(1);    opacity: 1;   }
 }
 .score-pop {
-  animation: score-pop 240ms var(--ease-spring) forwards;
+  animation: score-flip-in 230ms var(--ease-spring) forwards;
+  transform-origin: center center;
+}
+
+/* ── Modal backdrop fade + blur ── */
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-backdrop-in {
+  animation: backdrop-in 180ms ease-out both;
+}
+
+/* ── Modal panel slide up ── */
+@keyframes modal-slide-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.animate-modal-up {
+  animation: modal-slide-up 240ms var(--ease-spring) both;
+}
+
+/* ── Drawer panel slide up from bottom ── */
+@keyframes drawer-slide-up {
+  from { opacity: 0; transform: translateY(100%); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.animate-drawer-up {
+  animation: drawer-slide-up 280ms var(--ease-out) both;
 }
 
 /* ── Serve side slide ── */
