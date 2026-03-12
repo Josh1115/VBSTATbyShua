@@ -157,7 +157,7 @@ function TeamStatsTable({ t, opp }) {
     { label: 'Kills',   us: n(t.k),                 them: n(opp.k)   },
     { label: 'Aces',    us: n(t.ace),                them: n(opp.ace) },
     { label: 'Srv Err', us: n(t.se),                 them: n(opp.se)  },
-    { label: 'Blocks',  us: n(t.bs) + n(t.ba),       them: n(opp.blk) },
+    { label: 'Blocks',  us: n(t.bs) + n(t.ba) * 0.5, them: n(opp.blk) },
     { label: 'Digs',    us: n(t.dig),                them: '—'        },
     { label: 'Hit%',    us: fmtHitting(t.hit_pct),   them: '—'        },
     { label: 'APR',     us: fmtPassRating(t.apr),    them: '—'        },

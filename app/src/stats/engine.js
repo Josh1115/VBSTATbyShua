@@ -288,7 +288,7 @@ export function computePointQuality(contacts) {
       if      (c.action === 'serve'  && c.result === 'ace')    earned.ace++;
       else if (c.action === 'attack' && c.result === 'kill')   earned.k++;
       else if (c.action === 'block'  && c.result === 'solo')   earned.sblk++;
-      else if (c.action === 'block'  && c.result === 'assist') earned.hblk++;
+      else if (c.action === 'block'  && c.result === 'assist') earned.hblk += 0.5; // 2 contacts per event → each counts 0.5
 
       if      (c.action === 'serve'  && c.result === 'error')  given.se++;
       else if (c.action === 'attack' && c.result === 'error')  given.ae++;
