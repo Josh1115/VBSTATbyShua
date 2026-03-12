@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import clsx from 'clsx';
 import { useMatchStore } from '../../store/matchStore';
 import { computePlayerStats, computeTeamStats } from '../../stats/engine';
 import { StatTable } from '../stats/StatTable';
@@ -53,7 +54,7 @@ const CIRCUMFERENCE = 2 * Math.PI * 54; // ≈ 339.3
 
 const MILESTONE_ORDER = ['beat', 'tie', 'one_away', 'pct90', 'pct80'];
 
-export function TimeoutOverlay({ onClose, recordAlerts = [] }) {
+export function TimeoutOverlay({ onClose, recordAlerts = [], scoreAtLastTimeout = null }) {
   const [activeTab,   setActiveTab]   = useState('SERVING');
   const [secondsLeft, setSecondsLeft] = useState(60);
 
@@ -61,6 +62,11 @@ export function TimeoutOverlay({ onClose, recordAlerts = [] }) {
   const setNumber         = useMatchStore((s) => s.setNumber);
   const committedContacts = useMatchStore((s) => s.committedContacts);
   const currentSetId      = useMatchStore((s) => s.currentSetId);
+  const ourScore          = useMatchStore((s) => s.ourScore);
+  const oppScore          = useMatchStore((s) => s.oppScore);
+  const rotationNum       = useMatchStore((s) => s.rotationNum);
+  const pointHistory      = useMatchStore((s) => s.pointHistory);
+  const serveSide         = useMatchStore((s) => s.serveSide);
 
   const setContacts = useMemo(
     () => committedContacts.filter((c) => c.set_id === currentSetId),
@@ -124,10 +130,10 @@ export function TimeoutOverlay({ onClose, recordAlerts = [] }) {
             <div className="flex border-b border-slate-700 shrink-0 bg-slate-800/50 divide-x divide-slate-700">
               {groups.map((g) => (
                 <div key={g.label} className="flex flex-col px-3 py-2 gap-1 min-w-0">
-                  <span className="text-[1.1vmin] font-bold uppercase tracking-wider text-slate-500">{g.label}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{g.label}</span>
                   <div className="flex flex-wrap gap-x-2 gap-y-0.5">
                     {g.items.map((item) => (
-                      <span key={item} className="text-[1.3vmin] font-semibold text-slate-200 whitespace-nowrap">{item}</span>
+                      <span key={item} className="text-sm font-semibold text-slate-200 whitespace-nowrap">{item}</span>
                     ))}
                   </div>
                 </div>
@@ -157,26 +163,76 @@ export function TimeoutOverlay({ onClose, recordAlerts = [] }) {
         </div>
       </div>
 
-      {/* Right panel: record alerts strip + countdown ring + resume */}
-      <div className="flex flex-col items-center justify-center gap-6 flex-1">
+      {/* Right panel */}
+      <div className="flex flex-col items-center justify-center gap-4 flex-1 px-3">
+
+        {/* Current score */}
+        <div className="text-center">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-0.5">Set {setNumber} Score</div>
+          <div className="text-4xl font-black tabular-nums tracking-tight">
+            <span className="text-white">{ourScore}</span>
+            <span className="text-slate-500 mx-1">–</span>
+            <span className="text-slate-400">{oppScore}</span>
+          </div>
+        </div>
+
+        {/* Score since last timeout */}
+        {scoreAtLastTimeout !== null && (
+          <div className="text-center">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-0.5">Since Last TO</div>
+            <div className="text-lg font-bold tabular-nums">
+              <span className={ourScore - scoreAtLastTimeout.us > oppScore - scoreAtLastTimeout.them ? 'text-emerald-400' : 'text-white'}>
+                +{ourScore - scoreAtLastTimeout.us}
+              </span>
+              <span className="text-slate-500 mx-1">–</span>
+              <span className={oppScore - scoreAtLastTimeout.them > ourScore - scoreAtLastTimeout.us ? 'text-red-400' : 'text-slate-400'}>
+                +{oppScore - scoreAtLastTimeout.them}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Momentum strip — last 10 points */}
+        {pointHistory.length > 0 && (
+          <div className="text-center">
+            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Last {Math.min(pointHistory.length, 10)} Points</div>
+            <div className="flex gap-1 justify-center">
+              {pointHistory.slice(-10).map((p, i) => (
+                <div
+                  key={i}
+                  className={clsx(
+                    'w-4 h-4 rounded-sm',
+                    p.side === 'us' ? 'bg-emerald-500' : 'bg-red-500'
+                  )}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Rotation + next server */}
+        <div className="text-center">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-0.5">Rotation · Next Server</div>
+          <div className="text-sm font-semibold text-slate-200">
+            R{rotationNum} · {(serveSide === 'us' ? lineup[0] : lineup[1])?.playerName || '—'}
+          </div>
+        </div>
+
+        {/* Record alerts */}
         {recordAlerts.length > 0 && (() => {
           const sorted = [...recordAlerts].sort(
             (a, b) => MILESTONE_ORDER.indexOf(a.milestone) - MILESTONE_ORDER.indexOf(b.milestone)
           );
-          const top3 = sorted.slice(0, 3);
           return (
-            <div className="w-full px-3 overflow-y-auto max-h-40">
-              <RecordAlertPanel alerts={top3} />
+            <div className="w-full overflow-y-auto max-h-32">
+              <RecordAlertPanel alerts={sorted.slice(0, 3)} />
             </div>
           );
         })()}
-        <svg width="140" height="140" viewBox="0 0 140 140">
-          <circle
-            cx="70" cy="70" r="54"
-            fill="none"
-            stroke="#334155"
-            strokeWidth="10"
-          />
+
+        {/* Countdown ring */}
+        <svg width="120" height="120" viewBox="0 0 140 140">
+          <circle cx="70" cy="70" r="54" fill="none" stroke="#334155" strokeWidth="10" />
           <circle
             cx="70" cy="70" r="54"
             fill="none"
@@ -200,10 +256,6 @@ export function TimeoutOverlay({ onClose, recordAlerts = [] }) {
             {Math.max(secondsLeft, 0)}
           </text>
         </svg>
-
-        <span className="text-slate-400 text-sm font-semibold tracking-widest uppercase">
-          Timeout
-        </span>
 
         <button
           onPointerDown={(e) => { e.preventDefault(); onClose(); }}

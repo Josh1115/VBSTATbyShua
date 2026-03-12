@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { useMatchStore } from '../store/matchStore';
 import { SET_STATUS, FORMAT, SIDE } from '../constants';
@@ -30,6 +29,7 @@ export function LiveMatchPage() {
   const [statsOpen,    setStatsOpen]    = useState(false);
   const [summaryOpen,  setSummaryOpen]  = useState(false);
   const [timeoutOpen,      setTimeoutOpen]      = useState(false);
+  const [scoreAtTimeoutClose, setScoreAtTimeoutClose] = useState(null);
   const [liberoPickerOpen, setLiberoPickerOpen] = useState(false);
   const [liberoSwapOpen,   setLiberoSwapOpen]   = useState(false);
 
@@ -58,14 +58,14 @@ export function LiveMatchPage() {
 
   const { playerStats, teamStats } = useMatchStats();
 
-  const records = useLiveQuery(
-    () => teamId
-      ? db.records.where('team_id').equals(teamId)
-          .filter((r) => r.type === 'individual_match' || r.type === 'team_match')
-          .toArray()
-      : [],
-    [teamId]
-  );
+  const [records, setRecords] = useState([]);
+  useEffect(() => {
+    if (!teamId) return;
+    db.records.where('team_id').equals(teamId)
+      .filter((r) => r.type === 'individual_match' || r.type === 'team_match')
+      .toArray()
+      .then(setRecords);
+  }, [teamId]);
 
   const { activeAlerts, pendingAlerts, markPendingShown } = useRecordAlerts(records ?? [], playerStats, teamStats);
 
@@ -77,9 +77,15 @@ export function LiveMatchPage() {
       setStatsOpen(true);
       setLiveStatsDefaultTab('RECORDS');
     }
+  // intentionally only re-runs when a new point is scored; markPendingShown and
+  // setStatsOpen are stable refs that don't need to be deps
   }, [pointCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleTimeoutClose = useCallback(() => setTimeoutOpen(false), []);
+  const handleTimeoutClose = useCallback(() => {
+    const { ourScore, oppScore } = useMatchStore.getState();
+    setScoreAtTimeoutClose({ us: ourScore, them: oppScore });
+    setTimeoutOpen(false);
+  }, []);
   const handleLiberoPick   = useCallback((player) => {
     setLibero(player.id);
     setLiberoPlayer(player);
@@ -268,7 +274,7 @@ export function LiveMatchPage() {
         defaultTab={liveStatsDefaultTab}
       />
       {summaryOpen && <ScoringSummaryModal onClose={() => setSummaryOpen(false)} />}
-      {timeoutOpen && <TimeoutOverlay onClose={handleTimeoutClose} recordAlerts={activeAlerts} />}
+      {timeoutOpen && <TimeoutOverlay onClose={handleTimeoutClose} recordAlerts={activeAlerts} scoreAtLastTimeout={scoreAtTimeoutClose} />}
 
       {confettiNav && (
         <Confetti

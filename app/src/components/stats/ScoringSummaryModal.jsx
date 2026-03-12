@@ -201,7 +201,7 @@ function BookkeeperView({ rallies, contacts }) {
     return subs
       .filter((s) => !s.libero_swap && s.player_out && s.player_in)
       .map((s) => {
-        const prev = [...rallyScores].reverse().find((rs) => rs.ts <= s.timestamp);
+        const prev = rallyScores.findLast((rs) => rs.ts <= s.timestamp);
         return {
           outJersey: jerseyMap[s.player_out] ?? '?',
           inJersey:  jerseyMap[s.player_in]  ?? '?',

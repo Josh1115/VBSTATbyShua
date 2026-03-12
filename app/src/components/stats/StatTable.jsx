@@ -63,7 +63,8 @@ export function StatTable({ columns, rows }) {
                   key={col.key}
                   className={clsx(
                     'px-2 py-2 tabular-nums',
-                    col.key === 'name' ? 'text-left font-medium' : 'text-right text-slate-300'
+                    col.key === 'name' ? 'text-left font-medium' : 'text-right text-slate-300',
+                    col.cellClass?.(row[col.key], row)
                   )}
                 >
                   {col.fmt ? col.fmt(row[col.key]) : (row[col.key] ?? '—')}

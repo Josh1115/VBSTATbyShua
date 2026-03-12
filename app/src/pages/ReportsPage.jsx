@@ -9,6 +9,7 @@ import { TabBar } from '../components/ui/Tab';
 import { Spinner } from '../components/ui/Spinner';
 import { EmptyState } from '../components/ui/EmptyState';
 import { StatTable } from '../components/stats/StatTable';
+import { RotationSpotlight } from '../components/stats/RotationSpotlight';
 import { HittingBarChart } from '../components/charts/HittingBarChart';
 import { RotationRadarChart } from '../components/charts/RotationRadarChart';
 import { SideoutPieChart } from '../components/charts/SideoutPieChart';
@@ -282,6 +283,7 @@ export function ReportsPage() {
                   <SideoutPieChart so_pct={stats.rotation.bp_pct} label="Break Point" />
                 </div>
                 <RotationRadarChart rotationStats={stats.rotation} />
+                <RotationSpotlight rows={rotationRows} />
                 <StatTable columns={ROTATION_COLS} rows={rotationRows} />
               </>
             )}

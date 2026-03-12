@@ -11,6 +11,9 @@ import { SeasonsPage } from './pages/SeasonsPage';
 import { SeasonDetailPage } from './pages/SeasonDetailPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ToolsPage } from './pages/ToolsPage';
+import { ServeReceivePage } from './pages/tools/ServeReceivePage';
+import { ServeTrackerPage } from './pages/tools/ServeTrackerPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export const router = createBrowserRouter([
@@ -29,6 +32,9 @@ export const router = createBrowserRouter([
       { path: 'matches/:matchId/summary',    element: <MatchSummaryPage /> },
       { path: 'reports',                     element: <ReportsPage /> },
       { path: 'settings',                    element: <SettingsPage /> },
+      { path: 'tools',                       element: <ToolsPage /> },
+      { path: 'tools/serve-receive',         element: <ServeReceivePage /> },
+      { path: 'tools/serve-tracker',         element: <ServeTrackerPage /> },
       { path: '*',                           element: <NotFoundPage /> },
     ],
   },

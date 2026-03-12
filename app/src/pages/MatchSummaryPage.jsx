@@ -12,6 +12,7 @@ import { TabBar } from '../components/ui/Tab';
 import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import { StatTable } from '../components/stats/StatTable';
+import { RotationSpotlight } from '../components/stats/RotationSpotlight';
 import { PointQualityPanel } from '../components/stats/PointQualityPanel';
 import { RotationRadarChart } from '../components/charts/RotationRadarChart';
 import { CourtHeatMap } from '../components/charts/CourtHeatMap';
@@ -306,6 +307,7 @@ export function MatchSummaryPage() {
             {tab === 'rotation' && stats?.rotation && (
               <div className="space-y-6">
                 <RotationRadarChart rotationStats={stats.rotation} />
+                <RotationSpotlight rows={rotationRows} />
                 <StatTable columns={ROTATION_COLS} rows={rotationRows} />
                 <div className="grid grid-cols-2 gap-4 text-sm text-center">
                   <div className="bg-surface rounded-xl p-3">

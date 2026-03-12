@@ -90,6 +90,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const teamJerseyColor     = useMatchStore((s) => s.teamJerseyColor);
   const liberoJerseyColor   = useMatchStore((s) => s.liberoJerseyColor);
   const rallyCount          = useMatchStore((s) => s.rallyCount);
+  const rotationNum         = useMatchStore((s) => s.rotationNum);
 
   const isLibero     = slot?.playerId && slot.playerId === liberoId;
   const jerseyColor  = isLibero ? liberoJerseyColor : teamJerseyColor;
@@ -150,13 +151,8 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
       {/* ── Player badge strip ── */}
       <div className="flex-[8_1_0%] min-h-[0.2275vmin] relative flex items-center justify-center px-2 bg-black/40 border-b border-slate-700/50 overflow-hidden">
 
-        {/* ── Left: year + jersey icon ── */}
+        {/* ── Left: jersey icon ── */}
         <div className="absolute left-2 flex items-center gap-1">
-          {slot.year && (
-            <span className={`text-[2.125vmin] font-bold leading-none ${isServer ? 'text-orange-400' : 'text-slate-500'}`}>
-              {{ Freshman: 'Fr', Sophomore: 'So', Junior: 'Jr', Senior: 'Sr' }[slot.year] ?? ''}
-            </span>
-          )}
           <span className="text-[1.4875vmin] font-bold uppercase whitespace-nowrap leading-none text-slate-200">
             <span className="relative inline-flex items-center px-3">
               <svg
@@ -190,7 +186,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
             </span>
           )}
           <span className={`text-[1.7vmin] font-bold leading-none border rounded px-1 py-0.5 ${isServer ? 'text-orange-400 border-orange-500/60' : 'text-slate-500 border-slate-700'}`}>
-            S{slot.serveOrder}
+            S{((rotationNum + (slot.position ?? 1) - 2) % 6) + 1}
           </span>
         </div>
       </div>

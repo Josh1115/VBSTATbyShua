@@ -415,9 +415,8 @@ export const useMatchStore = create((set, get) => ({
         newCommittedContacts = [...newCommittedContacts, { ...autoSetContact, id: autoSetId }];
       } else if (contactData.result === RESULT.KILL) {
         // No back row setter — fall back to back-assigning the last manual SET contact
-        const lastSetContact = [...s.committedContacts]
-          .reverse()
-          .find((c) => c.set_id === s.currentSetId && c.action === ACTION.SET);
+        const lastSetContact = s.committedContacts
+          .findLast((c) => c.set_id === s.currentSetId && c.action === ACTION.SET);
         if (lastSetContact) {
           assistId = lastSetContact.id;
           await db.contacts.update(lastSetContact.id, { result: RESULT.ASSIST });
