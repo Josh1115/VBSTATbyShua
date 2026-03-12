@@ -16,7 +16,7 @@ function RunStrip({ teamStats: t, oppStats: o, currentRun, teamName, opponentNam
     ['SE',   n(t.se)],
     ['K',    n(t.k)],
     ['AE',   n(t.ae)],
-    ['BLK',  n(t.bs) + n(t.ba)],
+    ['BLK',  n(t.bs) + n(t.ba) * 0.5],
     ['APR',  dec1(t.apr)],
   ];
   const OPP_STATS = o ? [
