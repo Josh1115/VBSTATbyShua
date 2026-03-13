@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useMatchStore } from '../../store/matchStore';
 import { useMatchStats } from '../../hooks/useMatchStats';
 import { db } from '../../db/schema';
-import { computeTeamStats, computeOppDisplayStats, computeRotationStats, computeRotationContactStats, computeISvsOOS } from '../../stats/engine';
+import { computeTeamStats, computeOppDisplayStats, computeRotationStats, computeRotationContactStats, computeISvsOOS, computeFreeDigWin } from '../../stats/engine';
 import { StatTable } from './StatTable';
 import { PointQualityPanel } from './PointQualityPanel';
 import { RecordAlertPanel } from '../match/RecordAlertPanel';
@@ -67,10 +67,11 @@ const COLUMNS = {
     { key: 'bps',  label: 'BPS', fmt: fmtPassRating },
   ],
   DEFENSE: [
-    { key: 'name', label: 'Player' },
-    { key: 'dig',  label: 'DIG',  fmt: fmtCount },
-    { key: 'de',   label: 'DE',   fmt: fmtCount },
-    { key: 'dips', label: 'DiPS', fmt: fmtPassRating },
+    { key: 'name',   label: 'Player' },
+    { key: 'dig',    label: 'DIG',  fmt: fmtCount },
+    { key: 'fb_dig', label: 'FB',   fmt: fmtCount },
+    { key: 'de',     label: 'DE',   fmt: fmtCount },
+    { key: 'dips',   label: 'DiPS', fmt: fmtPassRating },
   ],
   VER: [
     { key: 'name', label: 'Player' },
@@ -275,7 +276,7 @@ function RotationTable({ rotPts, rotContacts }) {
 }
 
 // ── In-System / Out-of-System Table ──────────────────────────────────────────
-function ISvsOOSTable({ data }) {
+function ISvsOOSTable({ data, freeDigData }) {
   const ROTATIONS = [1, 2, 3, 4, 5, 6];
   const pctFmt = (won, pa) => pa > 0 ? Math.round(won / pa * 100) + '%' : '—';
   const cntFmt = (v) => v > 0 ? v : '—';
@@ -305,6 +306,19 @@ function ISvsOOSTable({ data }) {
       labelCls:  'text-amber-700',
       fmt:       (r) => pctFmt(data.byRotation[r]?.oos_won ?? 0, data.byRotation[r]?.oos_pa ?? 0),
       total:     ()  => pctFmt(data.total.oos_won, data.total.oos_pa),
+    },
+    null,
+    {
+      label:     'FREE Dig',
+      labelCls:  'text-cyan-700',
+      fmt:       (r) => cntFmt(n(freeDigData.byRotation[r]?.fb_dig)),
+      total:     ()  => cntFmt(n(freeDigData.total.fb_dig)),
+    },
+    {
+      label:     'FREEWIN%',
+      labelCls:  'text-cyan-700',
+      fmt:       (r) => pctFmt(freeDigData.byRotation[r]?.fb_won ?? 0, freeDigData.byRotation[r]?.fb_dig ?? 0),
+      total:     ()  => pctFmt(freeDigData.total.fb_won, freeDigData.total.fb_dig),
     },
   ];
 
@@ -352,7 +366,7 @@ function ISvsOOSTable({ data }) {
         </table>
       </div>
       <p className="text-[10px] text-slate-600 mt-2 text-center">
-        IS = 3-rated pass · OOS = 1–2 rated · 0-rated (aces against) excluded
+        IS = 3-rated pass · OOS = 1–2 rated · FREE = freeball dig
       </p>
     </div>
   );
@@ -463,6 +477,20 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
     [allMatchContacts, allMatchRallies]
   );
 
+  const EMPTY_FREEDIG = { byRotation: Object.fromEntries(Array.from({length:6},(_,i)=>[i+1,{fb_dig:0,fb_won:0}])), total: {fb_dig:0,fb_won:0} };
+
+  const setFreeDigWin = useMemo(
+    () => computeFreeDigWin(
+      committedContacts.filter((c) => c.set_id === currentSetId),
+      currentSetRallies ?? []
+    ),
+    [committedContacts, currentSetId, currentSetRallies]
+  );
+  const matchFreeDigWin = useMemo(
+    () => computeFreeDigWin(allMatchContacts ?? [], allMatchRallies ?? []),
+    [allMatchContacts, allMatchRallies]
+  );
+
   if (!open) return null;
 
   const t          = scope === 'set' ? teamStats       : matchTeamStats;
@@ -470,6 +498,7 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
   const rotPts     = scope === 'set' ? setRotPts       : matchRotPts;
   const rotContacts = scope === 'set' ? setRotContacts : matchRotContacts;
   const isvsoos    = scope === 'set' ? (setISvsOOS ?? EMPTY_ISVSOOS) : (matchISvsOOS ?? EMPTY_ISVSOOS);
+  const freeDigWin = scope === 'set' ? (setFreeDigWin ?? EMPTY_FREEDIG) : (matchFreeDigWin ?? EMPTY_FREEDIG);
 
   const rows = lineup
     .filter((sl) => sl.playerId)
@@ -584,7 +613,7 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
 
             {/* In-System / Out-of-System */}
             <div className="border-t border-slate-800">
-              <ISvsOOSTable data={isvsoos} />
+              <ISvsOOSTable data={isvsoos} freeDigData={freeDigWin} />
             </div>
           </>
         ) : (

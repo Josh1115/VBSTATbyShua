@@ -53,7 +53,7 @@ function computePlayerStats(contacts, playerId, setId) {
     } else if (action === 'serve') {
       if (result === 'ace')   ace++;
       if (result === 'error') se++;
-    } else if (action === 'dig'   && result === 'success')                      dig++;
+    } else if (action === 'dig'   && (result === 'success' || result === 'freeball')) dig++;
     else if (action === 'block'   && (result === 'solo' || result === 'assist')) blk++;
     else if (action === 'pass') {
       const v = Number(result);
@@ -282,12 +282,15 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
             cls="bg-red-950/80 text-red-300 hover:bg-red-900/80" />
         </div>
 
-        {/* Row 3 — Defense: DIG SBLK HBLK */}
+        {/* Row 3 — Defense: DIG FREE SBLK HBLK */}
         <div className="px-[7.5%]"><span className="text-[1.3vmin] font-bold uppercase tracking-wide text-slate-500 leading-none">Defense</span></div>
         <div className="flex flex-none h-[3.837vmin] py-0 px-[7.5%] gap-[0.5vmin] border-b border-black/30">
           <Btn label="DIG"
             onTap={() => tap(ACTION.DIG, RESULT.SUCCESS)}
             cls="bg-sky-950/80 text-sky-300 hover:bg-sky-900/80" />
+          <Btn label="FREE"
+            onTap={() => tap(ACTION.DIG, RESULT.FREEBALL)}
+            cls="bg-cyan-950/80 text-cyan-300 hover:bg-cyan-900/80" />
           <Btn label="SBLK"
             onTap={() => tapAndScore(ACTION.BLOCK, RESULT.SOLO)}
             cls="bg-blue-950/80 text-blue-300 hover:bg-blue-900/80" />

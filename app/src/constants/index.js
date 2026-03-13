@@ -63,6 +63,7 @@ export const RESULT = {
   BLOCK_ASSIST:        'assist',
   // dig
   SUCCESS:             'success',
+  FREEBALL:            'freeball',
   // other errors
   LIFT:                'lift',
   DOUBLE:              'double',

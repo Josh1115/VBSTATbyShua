@@ -33,7 +33,7 @@ function mkAccum() {
     // block
     bs: 0, ba: 0, be: 0,
     // dig
-    dig: 0, de: 0,
+    dig: 0, fb_dig: 0, de: 0,
     // freeball
     fbr: 0, fbs: 0,
   };
@@ -71,8 +71,9 @@ function accumContact(p, { action, result, serve_type }) {
     if (result === 'assist') p.ba++;
     if (result === 'error')  p.be++;
   } else if (action === 'dig') {
-    if (result === 'success') p.dig++;
-    if (result === 'error')   p.de++;
+    if (result === 'success' || result === 'freeball') p.dig++;
+    if (result === 'freeball') p.fb_dig++;
+    if (result === 'error')    p.de++;
   } else if (action === 'freeball_receive') {
     p.fbr++;
   } else if (action === 'freeball_send') {
@@ -118,7 +119,7 @@ function deriveStats(p, sp, posLabel = null) {
     bps: div(p.bs + p.ba * 0.5, sp),
 
     // Defense
-    dig: p.dig, de: p.de,
+    dig: p.dig, fb_dig: p.fb_dig, de: p.de,
     dips: div(p.dig, sp),
 
     // Freeball
@@ -288,6 +289,31 @@ export function computeISvsOOS(contacts, rallies) {
       if (slot) { slot.oos_pa++; slot.oos_won += won; }
       total.oos_pa++; total.oos_won += won;
     }
+  }
+
+  return { byRotation, total };
+}
+
+/**
+ * Free-ball dig win stats.
+ * FREE dig = action 'dig', result 'freeball'.
+ * Returns { byRotation: { 1..6: { fb_dig, fb_won } }, total: same }
+ */
+export function computeFreeDigWin(contacts, rallies) {
+  const rallyMap = new Map(rallies.map((r) => [r.id, r]));
+  const mkSlot = () => ({ fb_dig: 0, fb_won: 0 });
+  const byRotation = {};
+  for (let r = 1; r <= 6; r++) byRotation[r] = mkSlot();
+  const total = mkSlot();
+
+  for (const c of contacts) {
+    if (c.opponent_contact || c.action !== 'dig' || c.result !== 'freeball') continue;
+    const rally = rallyMap.get(c.rally_id);
+    if (!rally) continue;
+    const won = rally.point_winner === 'us' ? 1 : 0;
+    const slot = byRotation[c.rotation_num];
+    if (slot) { slot.fb_dig++; slot.fb_won += won; }
+    total.fb_dig++; total.fb_won += won;
   }
 
   return { byRotation, total };
