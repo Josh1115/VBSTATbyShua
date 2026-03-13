@@ -255,6 +255,45 @@ export function computeRotationContactStats(contacts) {
 }
 
 /**
+ * In-System vs Out-of-System pass outcome stats.
+ *
+ * In-System  (IS)  = pass rated 3 → how often did we win the point
+ * Out-of-System (OOS) = pass rated 1 or 2 → how often did we win the point
+ * Rating 0 (ace against us) is excluded.
+ *
+ * Returns { byRotation: { 1..6: { is_pa, is_won, oos_pa, oos_won } }, total: same }
+ */
+export function computeISvsOOS(contacts, rallies) {
+  const rallyMap = new Map(rallies.map((r) => [r.id, r]));
+  const mkSlot = () => ({ is_pa: 0, is_won: 0, oos_pa: 0, oos_won: 0 });
+  const byRotation = {};
+  for (let r = 1; r <= 6; r++) byRotation[r] = mkSlot();
+  const total = mkSlot();
+
+  for (const c of contacts) {
+    if (c.opponent_contact || c.action !== 'pass') continue;
+    const rating = parseInt(c.result, 10);
+    if (rating === 0 || isNaN(rating)) continue; // ace — skip
+
+    const rally = rallyMap.get(c.rally_id);
+    if (!rally) continue;
+    const won = rally.point_winner === 'us' ? 1 : 0;
+    const slot = byRotation[c.rotation_num];
+    const isIS = rating === 3;
+
+    if (isIS) {
+      if (slot) { slot.is_pa++; slot.is_won += won; }
+      total.is_pa++; total.is_won += won;
+    } else {
+      if (slot) { slot.oos_pa++; slot.oos_won += won; }
+      total.oos_pa++; total.oos_won += won;
+    }
+  }
+
+  return { byRotation, total };
+}
+
+/**
  * Freeball outcome stats — requires both contacts AND rallies arrays
  * so the caller (match or season) can pass already-fetched data.
  *

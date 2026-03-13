@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useMatchStore } from '../../store/matchStore';
 import { useMatchStats } from '../../hooks/useMatchStats';
 import { db } from '../../db/schema';
-import { computeTeamStats, computeOppDisplayStats, computeRotationStats, computeRotationContactStats } from '../../stats/engine';
+import { computeTeamStats, computeOppDisplayStats, computeRotationStats, computeRotationContactStats, computeISvsOOS } from '../../stats/engine';
 import { StatTable } from './StatTable';
 import { PointQualityPanel } from './PointQualityPanel';
 import { RecordAlertPanel } from '../match/RecordAlertPanel';
@@ -274,6 +274,90 @@ function RotationTable({ rotPts, rotContacts }) {
   );
 }
 
+// ── In-System / Out-of-System Table ──────────────────────────────────────────
+function ISvsOOSTable({ data }) {
+  const ROTATIONS = [1, 2, 3, 4, 5, 6];
+  const pctFmt = (won, pa) => pa > 0 ? Math.round(won / pa * 100) + '%' : '—';
+  const cntFmt = (v) => v > 0 ? v : '—';
+
+  const rows = [
+    {
+      label:     'IS Pass',
+      labelCls:  'text-emerald-700',
+      fmt:       (r) => cntFmt(n(data.byRotation[r]?.is_pa)),
+      total:     ()  => cntFmt(n(data.total.is_pa)),
+    },
+    {
+      label:     'IS Win%',
+      labelCls:  'text-emerald-700',
+      fmt:       (r) => pctFmt(data.byRotation[r]?.is_won ?? 0, data.byRotation[r]?.is_pa ?? 0),
+      total:     ()  => pctFmt(data.total.is_won, data.total.is_pa),
+    },
+    null,
+    {
+      label:     'OOS Pass',
+      labelCls:  'text-amber-700',
+      fmt:       (r) => cntFmt(n(data.byRotation[r]?.oos_pa)),
+      total:     ()  => cntFmt(n(data.total.oos_pa)),
+    },
+    {
+      label:     'OOS Win%',
+      labelCls:  'text-amber-700',
+      fmt:       (r) => pctFmt(data.byRotation[r]?.oos_won ?? 0, data.byRotation[r]?.oos_pa ?? 0),
+      total:     ()  => pctFmt(data.total.oos_won, data.total.oos_pa),
+    },
+  ];
+
+  return (
+    <div className="px-4 pt-3 pb-4">
+      <div className="text-xs font-bold uppercase tracking-widest text-slate-500 text-center mb-2">
+        In-System / Out-of-System
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-center min-w-[340px]">
+          <thead>
+            <tr>
+              <th className="text-left text-[10px] text-slate-600 pr-2 pb-1 uppercase tracking-wide w-14">Stat</th>
+              {ROTATIONS.map((r) => (
+                <th key={r} className="text-[11px] font-black text-orange-400 pb-1">R{r}</th>
+              ))}
+              <th className="text-[11px] font-black text-slate-400 pb-1">TOT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => {
+              if (row === null) return (
+                <tr key={`div-${i}`}><td colSpan={8} className="py-0.5"><div className="border-t border-slate-800" /></td></tr>
+              );
+              return (
+                <tr key={row.label} className="border-b border-slate-800/50">
+                  <td className={`text-left text-[10px] uppercase tracking-wide pr-2 py-1 font-semibold ${row.labelCls}`}>
+                    {row.label}
+                  </td>
+                  {ROTATIONS.map((r) => {
+                    const val = row.fmt(r);
+                    return (
+                      <td key={r} className={`text-[12px] font-bold tabular-nums py-1 ${val !== '—' ? 'text-slate-200' : 'text-slate-700'}`}>
+                        {val}
+                      </td>
+                    );
+                  })}
+                  <td className="text-[12px] font-bold tabular-nums py-1 text-slate-300">
+                    {row.total()}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[10px] text-slate-600 mt-2 text-center">
+        IS = 3-rated pass · OOS = 1–2 rated · 0-rated (aces against) excluded
+      </p>
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAlerts = [], defaultTab = null }) {
   const [activeView, setActiveView] = useState('box');
@@ -365,12 +449,27 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
     [allMatchContacts]
   );
 
+  const EMPTY_ISVSOOS = { byRotation: Object.fromEntries(Array.from({length:6},(_,i)=>[i+1,{is_pa:0,is_won:0,oos_pa:0,oos_won:0}])), total: {is_pa:0,is_won:0,oos_pa:0,oos_won:0} };
+
+  const setISvsOOS = useMemo(
+    () => computeISvsOOS(
+      committedContacts.filter((c) => c.set_id === currentSetId),
+      currentSetRallies ?? []
+    ),
+    [committedContacts, currentSetId, currentSetRallies]
+  );
+  const matchISvsOOS = useMemo(
+    () => computeISvsOOS(allMatchContacts ?? [], allMatchRallies ?? []),
+    [allMatchContacts, allMatchRallies]
+  );
+
   if (!open) return null;
 
   const t          = scope === 'set' ? teamStats       : matchTeamStats;
   const opp        = scope === 'set' ? oppStats        : matchOppStats;
   const rotPts     = scope === 'set' ? setRotPts       : matchRotPts;
   const rotContacts = scope === 'set' ? setRotContacts : matchRotContacts;
+  const isvsoos    = scope === 'set' ? (setISvsOOS ?? EMPTY_ISVSOOS) : (matchISvsOOS ?? EMPTY_ISVSOOS);
 
   const rows = lineup
     .filter((sl) => sl.playerId)
@@ -481,6 +580,11 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
             {/* Rotation analysis */}
             <div className="border-t border-slate-800">
               <RotationTable rotPts={rotPts} rotContacts={rotContacts} />
+            </div>
+
+            {/* In-System / Out-of-System */}
+            <div className="border-t border-slate-800">
+              <ISvsOOSTable data={isvsoos} />
             </div>
           </>
         ) : (
