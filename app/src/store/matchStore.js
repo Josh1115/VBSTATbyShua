@@ -390,9 +390,11 @@ export const useMatchStore = create((set, get) => ({
   recordContact: async (contactData) => {
     const s = get();
     const contactFull = {
-      match_id:  s.matchId,
-      set_id:    s.currentSetId,
-      timestamp: Date.now(),
+      match_id:     s.matchId,
+      set_id:       s.currentSetId,
+      rotation_num: s.rotationNum,
+      serve_side:   s.serveSide,
+      timestamp:    Date.now(),
       ...contactData,
     };
     const id = await db.contacts.add(contactFull);
@@ -410,12 +412,14 @@ export const useMatchStore = create((set, get) => ({
       if (backRowSetter) {
         const isKill = contactData.result === RESULT.KILL;
         const autoSetContact = {
-          match_id:  s.matchId,
-          set_id:    s.currentSetId,
-          timestamp: Date.now() + 1,
-          player_id: backRowSetter.playerId,
-          action:    ACTION.SET,
-          result:    isKill ? RESULT.ASSIST : RESULT.ATTEMPT,
+          match_id:     s.matchId,
+          set_id:       s.currentSetId,
+          rotation_num: s.rotationNum,
+          serve_side:   s.serveSide,
+          timestamp:    Date.now() + 1,
+          player_id:    backRowSetter.playerId,
+          action:       ACTION.SET,
+          result:       isKill ? RESULT.ASSIST : RESULT.ATTEMPT,
         };
         autoSetId = await db.contacts.add(autoSetContact);
         newCommittedContacts = [...newCommittedContacts, { ...autoSetContact, id: autoSetId }];

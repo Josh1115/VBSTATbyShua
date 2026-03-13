@@ -3,7 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useMatchStore } from '../../store/matchStore';
 import { useMatchStats } from '../../hooks/useMatchStats';
 import { db } from '../../db/schema';
-import { computeTeamStats, computeOppDisplayStats } from '../../stats/engine';
+import { computeTeamStats, computeOppDisplayStats, computeRotationStats, computeRotationContactStats } from '../../stats/engine';
 import { StatTable } from './StatTable';
 import { PointQualityPanel } from './PointQualityPanel';
 import { RecordAlertPanel } from '../match/RecordAlertPanel';
@@ -189,6 +189,91 @@ function TeamStatsTable({ t, opp }) {
   );
 }
 
+// ── Rotation Analysis Table ───────────────────────────────────────────────────
+const pct   = (v) => v != null ? Math.round(v * 100) + '%' : '—';
+const dec1  = (v) => v != null ? v.toFixed(1) : '—';
+const hitFmt = (v) => v != null ? (v >= 0 ? '+' : '') + (v * 1000).toFixed(0) : '—';
+const n     = (v) => v ?? 0;
+
+function RotationTable({ rotPts, rotContacts }) {
+  const ROTATIONS = [1, 2, 3, 4, 5, 6];
+
+  const rows = [
+    { label: 'WIN%',  fmt: (r) => pct(rotPts[r]?.win_pct),    hi: true  },
+    { label: 'S/O%',  fmt: (r) => pct(rotPts[r]?.so_pct),     hi: true  },
+    { label: 'SRV%',  fmt: (r) => pct(rotPts[r]?.bp_pct),     hi: false },
+    { label: 'PTS W', fmt: (r) => n(rotPts[r]?.pts_won),      hi: false },
+    { label: 'PTS L', fmt: (r) => n(rotPts[r]?.pts_lost),     hi: false },
+    null, // divider
+    { label: 'K',     fmt: (r) => n(rotContacts[r]?.k),       hi: false },
+    { label: 'ACE',   fmt: (r) => n(rotContacts[r]?.ace),     hi: false },
+    { label: 'ERR',   fmt: (r) => n(rotContacts[r]?.ae) + n(rotContacts[r]?.se), hi: false },
+    { label: 'APR',   fmt: (r) => dec1(rotContacts[r]?.apr),  hi: false },
+    { label: 'HIT%',  fmt: (r) => hitFmt(rotContacts[r]?.hit_pct), hi: false },
+  ];
+
+  // Find best rotation per highlighted row
+  function bestRot(rowFmt, higherBetter = true) {
+    let best = null, bestVal = higherBetter ? -Infinity : Infinity;
+    for (const r of ROTATIONS) {
+      const raw = rowFmt === 'so' ? rotPts[r]?.so_pct
+        : rowFmt === 'bp' ? rotPts[r]?.bp_pct
+        : rowFmt === 'win' ? rotPts[r]?.win_pct : null;
+      if (raw != null && (higherBetter ? raw > bestVal : raw < bestVal)) {
+        bestVal = raw; best = r;
+      }
+    }
+    return best;
+  }
+
+  return (
+    <div className="px-4 pt-3 pb-4">
+      <div className="text-xs font-bold uppercase tracking-widest text-slate-500 text-center mb-2">
+        Rotation Analysis
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-center min-w-[320px]">
+          <thead>
+            <tr>
+              <th className="text-left text-[10px] text-slate-600 pr-2 pb-1 uppercase tracking-wide w-12">Stat</th>
+              {ROTATIONS.map((r) => (
+                <th key={r} className="text-[11px] font-black text-orange-400 pb-1">R{r}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => {
+              if (row === null) return (
+                <tr key={`div-${i}`}><td colSpan={7} className="py-0.5"><div className="border-t border-slate-800" /></td></tr>
+              );
+              return (
+                <tr key={row.label} className="border-b border-slate-800/50">
+                  <td className="text-left text-[10px] text-slate-500 uppercase tracking-wide pr-2 py-1">{row.label}</td>
+                  {ROTATIONS.map((r) => {
+                    const val = row.fmt(r);
+                    const hasData = rotPts[r]?.pts_total > 0 || (rotContacts[r] && (rotContacts[r].k > 0 || rotContacts[r].sa > 0 || rotContacts[r].pa > 0));
+                    return (
+                      <td
+                        key={r}
+                        className={`text-[12px] font-bold tabular-nums py-1 ${hasData ? 'text-slate-200' : 'text-slate-700'}`}
+                      >
+                        {val}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[10px] text-slate-600 mt-2 text-center">
+        S/O% = sideout when receiving · SRV% = point scored when serving
+      </p>
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAlerts = [], defaultTab = null }) {
   const [activeView, setActiveView] = useState('box');
@@ -210,8 +295,10 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
   const setNumber    = useMatchStore((s) => s.setNumber);
   const format       = useMatchStore((s) => s.format);
   const matchId      = useMatchStore((s) => s.matchId);
-  const pointHistory = useMatchStore((s) => s.pointHistory);
-  const lineup       = useMatchStore((s) => s.lineup);
+  const pointHistory  = useMatchStore((s) => s.pointHistory);
+  const lineup        = useMatchStore((s) => s.lineup);
+  const currentSetId  = useMatchStore((s) => s.currentSetId);
+  const committedContacts = useMatchStore((s) => s.committedContacts);
 
   const { teamStats, oppStats, playerStats, pointQuality } = useMatchStats();
 
@@ -224,6 +311,18 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
     [matchId]
   );
 
+  const allMatchRallies = useLiveQuery(
+    () => allMatchSets?.length
+      ? Promise.all(allMatchSets.map((s) => db.rallies.where('set_id').equals(s.id).toArray()))
+          .then((arrays) => arrays.flat())
+      : [],
+    [allMatchSets]
+  );
+  const currentSetRallies = useLiveQuery(
+    () => currentSetId ? db.rallies.where('set_id').equals(currentSetId).toArray() : [],
+    [currentSetId]
+  );
+
   const matchTeamStats = useMemo(
     () => computeTeamStats(allMatchContacts ?? [], setNumber),
     [allMatchContacts, setNumber]
@@ -233,10 +332,45 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
     [allMatchContacts]
   );
 
+  // Rotation point stats — wraps existing computeRotationStats into per-rotation shape
+  function buildRotPts(rallies) {
+    const raw = computeRotationStats(rallies ?? []);
+    const result = {};
+    for (let r = 1; r <= 6; r++) {
+      const rot = raw.rotations[r] ?? {};
+      const ptsWon  = (rot.so_win  ?? 0) + (rot.bp_win  ?? 0);
+      const ptsLost = (rot.so_opp  ?? 0) - (rot.so_win  ?? 0) + (rot.bp_opp ?? 0) - (rot.bp_win ?? 0);
+      const ptsTotal = (rot.so_opp ?? 0) + (rot.bp_opp ?? 0);
+      result[r] = {
+        pts_won:  ptsWon,
+        pts_lost: ptsLost,
+        pts_total: ptsTotal,
+        win_pct:  ptsTotal > 0 ? ptsWon / ptsTotal : null,
+        so_pct:   rot.so_pct ?? null,
+        bp_pct:   rot.bp_pct ?? null,
+      };
+    }
+    return result;
+  }
+
+  const setRotPts   = useMemo(() => buildRotPts(currentSetRallies),  [currentSetRallies]);
+  const matchRotPts = useMemo(() => buildRotPts(allMatchRallies),    [allMatchRallies]);
+
+  const setRotContacts   = useMemo(
+    () => computeRotationContactStats(committedContacts.filter((c) => c.set_id === currentSetId)),
+    [committedContacts, currentSetId]
+  );
+  const matchRotContacts = useMemo(
+    () => computeRotationContactStats(allMatchContacts ?? []),
+    [allMatchContacts]
+  );
+
   if (!open) return null;
 
-  const t   = scope === 'set' ? teamStats : matchTeamStats;
-  const opp = scope === 'set' ? oppStats  : matchOppStats;
+  const t          = scope === 'set' ? teamStats       : matchTeamStats;
+  const opp        = scope === 'set' ? oppStats        : matchOppStats;
+  const rotPts     = scope === 'set' ? setRotPts       : matchRotPts;
+  const rotContacts = scope === 'set' ? setRotContacts : matchRotContacts;
 
   const rows = lineup
     .filter((sl) => sl.playerId)
@@ -342,6 +476,11 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
             {/* Team stats */}
             <div className="border-t border-slate-800">
               <TeamStatsTable t={t} opp={opp} />
+            </div>
+
+            {/* Rotation analysis */}
+            <div className="border-t border-slate-800">
+              <RotationTable rotPts={rotPts} rotContacts={rotContacts} />
             </div>
           </>
         ) : (

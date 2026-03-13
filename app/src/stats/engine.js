@@ -237,6 +237,24 @@ export function computeRotationStats(rallies) {
 }
 
 /**
+ * Per-rotation contact stats (K, ACE, SE, AE, PA, P0-P3, APR, HIT%, etc.)
+ * Requires contacts to have been stamped with rotation_num at record time.
+ * Returns { 1: statRow, 2: statRow, ... 6: statRow }
+ */
+export function computeRotationContactStats(contacts) {
+  const accums = {};
+  for (let r = 1; r <= 6; r++) accums[r] = mkAccum();
+  for (const c of contacts) {
+    if (c.opponent_contact || !c.rotation_num) continue;
+    const a = accums[c.rotation_num];
+    if (a) accumContact(a, c);
+  }
+  return Object.fromEntries(
+    Object.entries(accums).map(([r, acc]) => [r, deriveStats(acc, 1)])
+  );
+}
+
+/**
  * Freeball outcome stats — requires both contacts AND rallies arrays
  * so the caller (match or season) can pass already-fetched data.
  *

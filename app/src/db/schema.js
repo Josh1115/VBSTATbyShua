@@ -2,6 +2,10 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('VBAPPv2');
 
+db.version(5).stores({
+  contacts: '++id, match_id, player_id, action, set_id, rally_id, rotation_num',
+});
+
 db.version(4).stores({
   records: '++id, team_id, type, player_id',
 });
