@@ -3,11 +3,11 @@ import { useMatchStore } from '../../store/matchStore';
 import { ACTION, RESULT, SERVE_TYPE, SIDE } from '../../constants';
 
 // Restart a CSS animation on a DOM element without re-rendering
-function flashEl(el) {
+function flashEl(el, cls = 'btn-flash') {
   if (!el) return;
-  el.classList.remove('btn-flash');
+  el.classList.remove(cls);
   void el.offsetWidth;
-  el.classList.add('btn-flash');
+  el.classList.add(cls);
 }
 
 // Generic full-fill tap button
@@ -96,9 +96,12 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const jerseyColor  = isLibero ? liberoJerseyColor : teamJerseyColor;
   const jerseyHex    = JERSEY_HEX[jerseyColor] ?? JERSEY_HEX['black'];
   const numberColor  = (jerseyColor === 'gray' || jerseyColor === 'white') ? '#1e293b' : '#f1f5f9';
+  const jerseyRef   = useRef(null);
   const [serveType,     setServeType]     = useState(null);
   const [serveRecorded, setServeRecorded] = useState(false);
   const [passRing,      setPassRing]      = useState(null); // null | 0|1|2|3
+  const [rippleKey,     setRippleKey]     = useState(0);
+  const [rippleColor,   setRippleColor]   = useState(null);
   const passRingTimer = useRef(null);
 
   useEffect(() => {
@@ -109,25 +112,34 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const isServing = serveSide === SIDE.US;
   const showServeRow = isServer && isServing && !serveRecorded;
 
-  const tap = (action, result, extra = {}) =>
-    recordContact({ player_id: slot.playerId, action, result, ...extra });
+  const flashJersey = () => flashEl(jerseyRef.current, 'jersey-pop');
+
+  const tap = (action, result, extra = {}) => {
+    flashJersey();
+    return recordContact({ player_id: slot.playerId, action, result, ...extra });
+  };
 
   const tapAndScore = async (action, result, extra = {}) => {
+    flashJersey();
     await recordContact({ player_id: slot.playerId, action, result, ...extra });
     await addPoint(SIDE.US);
   };
 
   const tapAndScoreThem = async (action, result, extra = {}) => {
+    flashJersey();
     await recordContact({ player_id: slot.playerId, action, result, ...extra });
     await addPoint(SIDE.THEM);
   };
 
+  const RIPPLE_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e'];
   const tapPass = (rating, scoreThem = false) => {
     if (scoreThem) tapAndScoreThem(ACTION.PASS, String(rating));
     else           tap(ACTION.PASS, String(rating));
     clearTimeout(passRingTimer.current);
     setPassRing(rating);
     passRingTimer.current = setTimeout(() => setPassRing(null), 520);
+    setRippleColor(RIPPLE_COLORS[rating]);
+    setRippleKey((k) => k + 1);
   };
 
   // HBLK visual state for this tile
@@ -172,6 +184,13 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
       {isDimmed && (
         <div className="absolute inset-0 bg-slate-900/55 pointer-events-none z-10 first-contact-overlay" />
       )}
+      {rippleColor && (
+        <div
+          key={rippleKey}
+          className="pass-ripple absolute inset-0 pointer-events-none z-[5]"
+          style={{ background: rippleColor }}
+        />
+      )}
 
       {/* ── Player badge strip ── */}
       <div className="flex-[8_1_0%] min-h-[0.2275vmin] relative flex items-center justify-center px-2 bg-black/40 border-b border-slate-700/50 overflow-hidden">
@@ -195,7 +214,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
               >
                 <path d="M30 4Q50 18 70 4L96 17 86 36H77V77H23V36H14L4 17Z" />
               </svg>
-              <span className="relative" style={{ fontSize: '1.125em', color: numberColor }}>{slot.jersey}</span>
+              <span ref={jerseyRef} className="relative" style={{ fontSize: '1.125em', color: numberColor }}>{slot.jersey}</span>
             </span>
           </span>
         </div>
@@ -301,7 +320,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
             cls="bg-blue-950/80 text-blue-300 hover:bg-blue-900/80" />
           <Btn
             label={hblkState === 'mine' ? 'HBLK●' : hblkState === 'partner' ? 'HBLK✓' : 'HBLK'}
-            onTap={() => tapHblk(slot.playerId)}
+            onTap={() => { flashJersey(); tapHblk(slot.playerId); }}
             cls={
               hblkState === 'mine'
                 ? 'bg-amber-500 text-white animate-pulse'

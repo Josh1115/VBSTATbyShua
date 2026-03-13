@@ -1,10 +1,73 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import { useMatchStore } from '../../store/matchStore';
 import { useMatchStats } from '../../hooks/useMatchStats';
 import { SIDE, FORMAT } from '../../constants';
 import { LiberoBox } from './LiberoBox';
 
 const HOLD_MS = 3000;
+
+// ── #5 Ember canvas — drifting sparks behind the run flame badge ──────────────
+function EmberCanvas({ runCount }) {
+  const canvasRef = useRef(null);
+  const rafRef    = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || runCount < 5) return;
+    canvas.width  = canvas.offsetWidth  || 120;
+    canvas.height = canvas.offsetHeight || 18;
+    const ctx = canvas.getContext('2d');
+    const particles = [];
+    let frame = 0;
+    const spawnEvery = runCount >= 9 ? 1 : runCount >= 7 ? 2 : 3;
+
+    function tick() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      frame++;
+      if (frame % spawnEvery === 0) {
+        particles.push({
+          x:    canvas.width  * (0.2 + Math.random() * 0.6),
+          y:    canvas.height * 0.85,
+          vx:   (Math.random() - 0.5) * 1.2,
+          vy:   -(0.8 + Math.random() * 1.4),
+          life: 1,
+          r:    0.9 + Math.random() * 1.4,
+          hue:  Math.random() > 0.4 ? '#f97316' : '#f59e0b',
+        });
+      }
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x    += p.vx;
+        p.y    += p.vy;
+        p.vy   -= 0.02;
+        p.life -= 0.03;
+        if (p.life <= 0 || p.y < -2) { particles.splice(i, 1); continue; }
+        ctx.globalAlpha = p.life * 0.85;
+        ctx.fillStyle   = p.hue;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      rafRef.current  = requestAnimationFrame(tick);
+    }
+
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+  }, [runCount]);
+
+  if (runCount < 5) return null;
+  return (
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0 pointer-events-none"
+      style={{ width: '100%', height: '100%' }}
+    />
+  );
+}
 
 function RunStrip({ teamStats: t, oppStats: o, currentRun, teamName, opponentName }) {
   const n    = (v) => v ?? 0;
@@ -53,8 +116,9 @@ function RunStrip({ teamStats: t, oppStats: o, currentRun, teamName, opponentNam
         ))}
       </div>
       {currentRun.count >= 3 && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span className={`text-[15px] font-bold tracking-wide ${currentRun.side === 'us' ? 'text-orange-400' : 'text-red-400'} ${currentRun.count >= 6 ? 'flame-pulse-intense' : 'flame-pulse'}`}>
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+          <EmberCanvas runCount={currentRun.count} />
+          <span className={`relative text-[15px] font-bold tracking-wide ${currentRun.side === 'us' ? 'text-orange-400' : 'text-red-400'} ${currentRun.count >= 6 ? 'flame-pulse-intense' : 'flame-pulse'}`}>
             🔥 {currentRun.side === 'us' ? (teamName || 'HOME') : (opponentName || 'AWAY')} {currentRun.count} RUN
           </span>
         </div>
@@ -177,7 +241,9 @@ export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, o
   const [themHolding,     setThemHolding]     = useState(false);
   const [subWarnOpen,     setSubWarnOpen]     = useState(false);
   const [subWarnCount,    setSubWarnCount]    = useState(0); // subs remaining when warning fired
-  const weServe = serveSide === SIDE.US;
+  const [tiedFlashKey,    setTiedFlashKey]    = useState(0);
+  const weServe     = serveSide === SIDE.US;
+  const prevTiedRef = useRef(false);
 
   const [serveVersion,    setServeVersion]    = useState(0);
   const subWarn2Fired  = useRef(false);
@@ -210,6 +276,13 @@ export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, o
     if (subsLeft > 2) subWarn2Fired.current = false;
     if (subsLeft > 1) subWarn1Fired.current = false;
   }, [subsUsed, maxSubsPerSet]);
+
+  // Fire equalize flash when scores become tied at 20+
+  const isTied = (ourScore >= 20 || oppScore >= 20) && ourScore === oppScore;
+  useEffect(() => {
+    if (isTied && !prevTiedRef.current) setTiedFlashKey((k) => k + 1);
+    prevTiedRef.current = isTied;
+  }, [isTied]);
 
   function onScoreDown(side, e) {
     e.preventDefault();
@@ -289,6 +362,9 @@ export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, o
 
         {/* ── Center: absolutely centered score block ── */}
         <div className={`absolute left-1/2 -translate-x-1/2 flex items-center gap-2${tense ? ' score-tension' : ''}`}>
+          {tiedFlashKey > 0 && (
+            <div key={tiedFlashKey} className="equalize-flash absolute inset-[-6px] rounded-lg bg-white pointer-events-none z-10" />
+          )}
           {/* home team name — always a 3-letter abbreviation */}
           <span className="text-[2.9vmin] text-slate-100 font-bold uppercase tracking-widest leading-none">
             {teamName || 'HOM'}
@@ -314,6 +390,11 @@ export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, o
           {/* set number + sparkline */}
           <div className="flex flex-col items-center px-2 gap-[1px]">
             <span className="text-[1.6vmin] font-black text-slate-500 leading-none uppercase tracking-wide whitespace-nowrap">Set {setNumber}</span>
+            {isTied && (
+              <span key={tiedFlashKey} className="tied-label-in text-[1.3vmin] font-black text-yellow-400 uppercase tracking-widest leading-none">
+                TIED
+              </span>
+            )}
             <ScoreSparkline pointHistory={pointHistory} />
           </div>
 

@@ -18,7 +18,7 @@ function spawnParticle(width) {
   };
 }
 
-export function Confetti({ matchWin = false, onDone }) {
+export function Confetti({ matchWin = false, teamName = '', onDone }) {
   const rainMs  = matchWin ? 15000 : 5000;
   const canvasRef = useRef(null);
 
@@ -89,7 +89,7 @@ export function Confetti({ matchWin = false, onDone }) {
           drop-shadow-[0_0_24px_rgba(249,115,22,0.9)]"
           style={{ fontSize: 'clamp(2rem, 8vmin, 5rem)' }}
         >
-          LAKE ZURICH<br />WINS
+          {teamName || 'HOME'}<br />WINS
         </p>
       )}
     </div>

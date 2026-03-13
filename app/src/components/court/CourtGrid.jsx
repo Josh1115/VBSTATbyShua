@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMatchStore } from '../../store/matchStore';
+import { ACTION, RESULT } from '../../constants';
 import { PlayerTile } from './PlayerTile';
 
 // Render order maps the 2×3 visual grid to lineup indices.
@@ -121,6 +122,30 @@ function getServeReceiveDisplayOrder(lineup) {
 // Clockwise stagger from server position (pos1=gridIdx5 → pos2=2 → pos3=1 → pos4=0 → pos5=3 → pos6=4)
 const ROTATION_DELAYS = [165, 110, 55, 220, 275, 0];
 
+// Directional nudge per grid cell on rotation — matches the clockwise movement each player makes
+// Cell 0(top-left)=right, Cell 1(top-mid)=right, Cell 2(top-right)=down
+// Cell 3(bot-left)=up,    Cell 4(bot-mid)=left,   Cell 5(bot-right)=left
+const ROTATION_NUDGE = ['right', 'right', 'down', 'up', 'left', 'left'];
+
+// #1 Ball arc — parabolic arc for ACE / KILL contacts
+function BallArc({ startX, startY }) {
+  const dx   = (window.innerWidth  - startX) * 0.88;
+  const peak = Math.round(window.innerHeight * 0.22);
+  const land = Math.round(window.innerHeight * 0.08);
+  return (
+    <div
+      className="fixed pointer-events-none z-[999]"
+      style={{ left: startX, top: startY, '--arc-dx': `${dx}px`, '--arc-peak': `-${peak}px`, '--arc-land': `${land}px` }}
+    >
+      <div style={{ animation: 'ball-arc-x 680ms linear forwards' }}>
+        <div style={{ animation: 'ball-arc-y 680ms cubic-bezier(0.22,0,0.68,1) forwards' }}>
+          <span style={{ fontSize: '3.2vmin', display: 'block', animation: 'ball-arc-fade 680ms ease-in forwards' }}>🏐</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export const CourtGrid = memo(function CourtGrid() {
   const lineup            = useMatchStore((s) => s.lineup);
   const committedContacts = useMatchStore((s) => s.committedContacts);
@@ -128,9 +153,46 @@ export const CourtGrid = memo(function CourtGrid() {
   const rallyPhase        = useMatchStore((s) => s.rallyPhase);
   const serveSide         = useMatchStore((s) => s.serveSide);
   const rotationNum       = useMatchStore((s) => s.rotationNum);
+  const liberoId          = useMatchStore((s) => s.liberoId);
 
   const inRally        = rallyPhase === 'in_rally';
   const inServeReceive = serveSide === 'them' && !inRally;
+
+  // #1 Ball arc
+  const [ballArc,  setBallArc]  = useState(null); // { key, x, y } | null
+  // #2 Net flash
+  const [netFlash, setNetFlash] = useState(0);
+  // #7 Libero ghosts — grid indices where the outgoing player was the libero
+  const [liberoGhosts, setLiberoGhosts] = useState(new Set());
+
+  // Combined contact watcher — fires on new non-opponent contacts
+  const prevContactsLenRef = useRef(0);
+  const arcTimerRef = useRef(null);
+  useEffect(() => {
+    const len = committedContacts.length;
+    if (len <= prevContactsLenRef.current) return;
+    prevContactsLenRef.current = len;
+    const c = committedContacts[len - 1];
+    if (!c || c.opponent_contact) return;
+
+    // #1 Ball arc on ACE or KILL
+    if ((c.action === ACTION.SERVE  && c.result === RESULT.ACE) ||
+        (c.action === ACTION.ATTACK && c.result === RESULT.KILL)) {
+      const el = playerRefs.current[c.player_id];
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setBallArc({ key: c.id ?? len, x: r.left + r.width * 0.5, y: r.top + r.height * 0.5 });
+        clearTimeout(arcTimerRef.current);
+        arcTimerRef.current = setTimeout(() => setBallArc(null), 750);
+      }
+    }
+
+    // #2 Net flash on BLOCK solo/assist or NET_TOUCH error
+    if ((c.action === ACTION.BLOCK && (c.result === RESULT.SOLO || c.result === RESULT.ASSIST)) ||
+        (c.action === ACTION.ERROR && c.result === RESULT.NET_TOUCH)) {
+      setNetFlash((k) => k + 1);
+    }
+  }, [committedContacts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rotation flash — sweep clockwise across tiles when rotationNum increments
   const [rotating, setRotating] = useState(false);
@@ -164,28 +226,35 @@ export const CourtGrid = memo(function CourtGrid() {
   useEffect(() => {
     const prev = prevCellsRef.current;
     if (prev && prevRotForSub.current === rotationNum) {
-      const newIds   = new Set();
-      const newGhosts = {};
+      const newIds        = new Set();
+      const newGhosts     = {};
+      const newLiberoIdxs = new Set();
       cells.forEach((cell, i) => {
         if (cell?.playerId && prev[i]?.playerId && cell.playerId !== prev[i].playerId) {
           newIds.add(cell.playerId);
           newGhosts[i] = prev[i].playerName?.split(' ').pop() ?? '';
+          // #7 — mark as libero ghost if either the outgoing or incoming player is the libero
+          if (liberoId && (prev[i].playerId === liberoId || cell.playerId === liberoId)) {
+            newLiberoIdxs.add(i);
+          }
         }
       });
       if (newIds.size > 0) {
         setSubFlashIds(newIds);
         setSubGhosts(newGhosts);
+        if (newLiberoIdxs.size > 0) setLiberoGhosts(newLiberoIdxs);
         subTimersRef.current.forEach(clearTimeout);
         subTimersRef.current = [
           setTimeout(() => setSubFlashIds(new Set()), 1100),
           setTimeout(() => setSubGhosts({}), 750),
+          setTimeout(() => setLiberoGhosts(new Set()), 650),
         ];
       }
     }
     prevCellsRef.current = cells;
     prevRotForSub.current = rotationNum;
     return () => subTimersRef.current.forEach(clearTimeout);
-  }, [cells, rotationNum]);
+  }, [cells, rotationNum, liberoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // FLIP slide — animate tiles to new positions when display mode changes
   const playerRefs   = useRef({}); // { [playerId]: HTMLElement }
@@ -233,42 +302,74 @@ export const CourtGrid = memo(function CourtGrid() {
   }, [cells, committedContacts, currentSetId]);
 
   return (
-    // gap-px with bg-slate-700 creates hairline dividers between tiles
-    <div className="grid grid-cols-3 grid-rows-2 flex-1 min-h-0 w-full gap-px bg-slate-700">
-      {cells.map((slot, gridIdx) => {
-        const position   = slot?.position ?? (inRally ? gridIdx + 1 : GRID_ORDER[gridIdx] + 1);
-        const isServer   = !inRally && !inServeReceive && slot?.position === 1;
-        const heat       = slot?.playerId
-          ? (heatMap[slot.playerId] ?? { attack: null, serve: null, pass: null, dig: null })
-          : { attack: null, serve: null, pass: null, dig: null };
-        const isSubFlash = subFlashIds.has(slot?.playerId);
-        const cellClass  = `relative${rotating ? ' tile-rotating' : isSubFlash ? ' tile-sub-flash' : ''}`;
-        const cellStyle  = rotating ? { animationDelay: `${ROTATION_DELAYS[gridIdx]}ms` } : undefined;
-        return (
+    <>
+      {/* gap-px with bg-slate-700 creates hairline dividers between tiles */}
+      <div className="relative grid grid-cols-3 grid-rows-2 flex-1 min-h-0 w-full gap-px bg-slate-700">
+        {cells.map((slot, gridIdx) => {
+          const position   = slot?.position ?? (inRally ? gridIdx + 1 : GRID_ORDER[gridIdx] + 1);
+          const isServer   = !inRally && !inServeReceive && slot?.position === 1;
+          const heat       = slot?.playerId
+            ? (heatMap[slot.playerId] ?? { attack: null, serve: null, pass: null, dig: null })
+            : { attack: null, serve: null, pass: null, dig: null };
+          const isSubFlash = subFlashIds.has(slot?.playerId);
+          // #3 directional nudge replaces border-only tile-rotating
+          const cellClass  = rotating
+            ? `relative tile-rotate-${ROTATION_NUDGE[gridIdx]}`
+            : isSubFlash ? 'relative tile-sub-flash' : 'relative';
+          const cellStyle  = rotating ? { animationDelay: `${ROTATION_DELAYS[gridIdx]}ms` } : undefined;
+          return (
+            <div
+              key={slot?.position ?? gridIdx}
+              className={cellClass}
+              style={cellStyle}
+              ref={(el) => { if (el && slot?.playerId) playerRefs.current[slot.playerId] = el; }}
+            >
+              <PlayerTile
+                slot={slot}
+                position={position}
+                isServer={isServer}
+                heat={heat}
+                isSubIn={subFlashIds.has(slot?.playerId)}
+                isDimmed={inServeReceive && gridIdx < 3}
+              />
+              {subGhosts[gridIdx] && (
+                <div className={`absolute top-0 inset-x-0 h-[38%] pointer-events-none flex items-center justify-center ${liberoGhosts.has(gridIdx) ? 'libero-ghost-exit' : 'sub-ghost-exit'}`}>
+                  {/* #7 libero ghost: emerald tint; regular sub: white */}
+                  <span
+                    className={`font-bold uppercase tracking-wider ${liberoGhosts.has(gridIdx) ? 'text-emerald-400/70' : 'text-white/55'}`}
+                    style={{ fontSize: '3.15vmin', letterSpacing: '0.18em' }}
+                  >
+                    {subGhosts[gridIdx]}
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* #2 Net flash line — sits at the boundary between front and back rows */}
+        {netFlash > 0 && (
           <div
-            key={slot?.position ?? gridIdx}
-            className={cellClass}
-            style={cellStyle}
-            ref={(el) => { if (el && slot?.playerId) playerRefs.current[slot.playerId] = el; }}
-          >
-            <PlayerTile
-              slot={slot}
-              position={position}
-              isServer={isServer}
-              heat={heat}
-              isSubIn={subFlashIds.has(slot?.playerId)}
-              isDimmed={inServeReceive && gridIdx < 3}
-            />
-            {subGhosts[gridIdx] && (
-              <div className="absolute top-0 inset-x-0 h-[38%] pointer-events-none flex items-center justify-center sub-ghost-exit">
-                <span className="font-bold text-white/55 uppercase tracking-wider" style={{ fontSize: '3.15vmin', letterSpacing: '0.18em' }}>
-                  {subGhosts[gridIdx]}
-                </span>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+            key={netFlash}
+            className="net-flash-line absolute left-0 right-0 pointer-events-none z-20"
+            style={{
+              top: 'calc(50% - 2px)',
+              height: '4px',
+              background: 'linear-gradient(to right, transparent 0%, #f97316 15%, #fff8 50%, #f97316 85%, transparent 100%)',
+              boxShadow: '0 0 10px 3px rgba(249,115,22,0.55)',
+            }}
+          />
+        )}
+      </div>
+
+      {/* #1 Ball arc — fixed overlay, outside grid so it flies across the full viewport */}
+      {ballArc && (
+        <BallArc
+          key={ballArc.key}
+          startX={ballArc.x}
+          startY={ballArc.y}
+        />
+      )}
+    </>
   );
 });

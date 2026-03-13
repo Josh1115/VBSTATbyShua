@@ -497,3 +497,142 @@
 .animate-set-summary-in {
   animation: set-summary-in 420ms var(--ease-spring) both;
 }
+
+/* ── #8 Jersey number pop on contact record ── */
+@keyframes jersey-pop {
+  0%   { transform: scale(1);    text-shadow: none; }
+  35%  { transform: scale(1.45); text-shadow: 0 0 8px #f97316, 0 0 18px rgba(249,115,22,0.5); }
+  70%  { transform: scale(0.94); text-shadow: 0 0 4px #f97316; }
+  100% { transform: scale(1);    text-shadow: none; }
+}
+.jersey-pop {
+  display: inline-block;
+  animation: jersey-pop 220ms var(--ease-spring) both;
+}
+
+/* ── #6 Score equalize flash (tied at 20+) ── */
+@keyframes equalize-flash {
+  0%   { opacity: 0; }
+  12%  { opacity: 0.6; }
+  100% { opacity: 0; }
+}
+.equalize-flash {
+  animation: equalize-flash 650ms ease-out forwards;
+}
+
+/* ── #6 Tied micro-label slide-in ── */
+@keyframes tied-label-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.85); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.tied-label-in {
+  animation: tied-label-in 200ms var(--ease-spring) both;
+}
+
+/* ── #2 Net boundary flash on block / net touch ── */
+@keyframes net-flash {
+  0%   { opacity: 0;   transform: scaleX(0.5); filter: blur(3px); }
+  18%  { opacity: 1;   transform: scaleX(1);   filter: blur(0px); }
+  100% { opacity: 0;   transform: scaleX(1.04); filter: blur(1px); }
+}
+.net-flash-line {
+  animation: net-flash 480ms ease-out forwards;
+  transform-origin: center;
+}
+
+/* ── #4 Pass rating ripple ── */
+@keyframes pass-ripple {
+  0%   { transform: scale(0.15); opacity: 0.65; }
+  100% { transform: scale(2.6);  opacity: 0; }
+}
+.pass-ripple {
+  animation: pass-ripple 460ms var(--ease-out) forwards;
+  transform-origin: center center;
+  border-radius: 50%;
+}
+
+/* ── #7 Libero ghost blur exit (emerald tint) ── */
+@keyframes libero-ghost-exit {
+  0%   { opacity: 0.75; transform: translateY(0)    scale(1.0); filter: blur(0px); }
+  100% { opacity: 0;    transform: translateY(-20px) scale(0.88); filter: blur(5px); }
+}
+.libero-ghost-exit {
+  animation: libero-ghost-exit 580ms var(--ease-out) forwards;
+}
+
+/* ── #1 Ball arc — split translate for parabolic motion ── */
+@keyframes ball-arc-x {
+  from { transform: translateX(0); }
+  to   { transform: translateX(var(--arc-dx, 280px)); }
+}
+@keyframes ball-arc-y {
+  0%   { transform: translateY(0)                    scale(1);    }
+  32%  { transform: translateY(var(--arc-peak,-75px)) scale(0.92); }
+  100% { transform: translateY(var(--arc-land, 55px)) scale(0.58); }
+}
+@keyframes ball-arc-fade {
+  0%, 40% { opacity: 1; }
+  100%    { opacity: 0; }
+}
+
+/* ── #3 Rotation directional nudge (replaces tile-rotating border flash) ── */
+@keyframes tile-rotate-right {
+  0%   { box-shadow: inset 0 0 0 0 rgba(249,115,22,0);   transform: translateX(0);  }
+  30%  { box-shadow: inset 0 0 0 2px rgba(249,115,22,0.8); transform: translateX(7px); }
+  100% { box-shadow: inset 0 0 0 0 rgba(249,115,22,0);   transform: translateX(0);  }
+}
+@keyframes tile-rotate-left {
+  0%   { box-shadow: inset 0 0 0 0 rgba(249,115,22,0);   transform: translateX(0);   }
+  30%  { box-shadow: inset 0 0 0 2px rgba(249,115,22,0.8); transform: translateX(-7px); }
+  100% { box-shadow: inset 0 0 0 0 rgba(249,115,22,0);   transform: translateX(0);   }
+}
+@keyframes tile-rotate-up {
+  0%   { box-shadow: inset 0 0 0 0 rgba(249,115,22,0);   transform: translateY(0);   }
+  30%  { box-shadow: inset 0 0 0 2px rgba(249,115,22,0.8); transform: translateY(-7px); }
+  100% { box-shadow: inset 0 0 0 0 rgba(249,115,22,0);   transform: translateY(0);   }
+}
+@keyframes tile-rotate-down {
+  0%   { box-shadow: inset 0 0 0 0 rgba(249,115,22,0);   transform: translateY(0);  }
+  30%  { box-shadow: inset 0 0 0 2px rgba(249,115,22,0.8); transform: translateY(7px); }
+  100% { box-shadow: inset 0 0 0 0 rgba(249,115,22,0);   transform: translateY(0);  }
+}
+.tile-rotate-right { animation: tile-rotate-right 320ms var(--ease-spring) both; }
+.tile-rotate-left  { animation: tile-rotate-left  320ms var(--ease-spring) both; }
+.tile-rotate-up    { animation: tile-rotate-up    320ms var(--ease-spring) both; }
+.tile-rotate-down  { animation: tile-rotate-down  320ms var(--ease-spring) both; }
+
+/* ── Net cable wave — gentle mesh oscillation ── */
+@keyframes net-cable-wave {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(2px); }
+}
+.net-wave {
+  animation: net-cable-wave 3s ease-in-out infinite;
+}
+
+/* ── Net ripple on VBSTAT tap ── */
+@keyframes net-ripple {
+  0%   { transform: scaleY(1);    }
+  30%  { transform: scaleY(1.15); }
+  65%  { transform: scaleY(0.95); }
+  100% { transform: scaleY(1);    }
+}
+.net-ripple {
+  animation: net-ripple 400ms var(--ease-spring) forwards;
+  transform-origin: top center;
+}
+
+/* ── Floater serve arc (1-in-3 header ball variant) ── */
+@keyframes floater-arc {
+  0%   { transform: translate(0px,    25px); opacity: 0; }
+  5%   { transform: translate(15px,   10px); opacity: 1; }
+  30%  { transform: translate(100px, -40px); opacity: 1; }
+  55%  { transform: translate(190px, -32px); opacity: 1; }
+  70%  { transform: translate(240px, -22px); opacity: 1; }
+  88%  { transform: translate(295px,  28px); opacity: 1; }
+  100% { transform: translate(320px,  28px); opacity: 0; }
+}
+.animate-floater-arc {
+  animation: floater-arc 1.8s cubic-bezier(0.3, 0.0, 0.7, 1.0) forwards;
+  transform-origin: center bottom;
+}

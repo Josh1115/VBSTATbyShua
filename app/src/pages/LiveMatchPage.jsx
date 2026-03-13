@@ -294,6 +294,7 @@ export function LiveMatchPage() {
       {confettiNav && (
         <Confetti
           matchWin={confettiNav.matchWin}
+          teamName={teamName}
           onDone={() => { const p = confettiNav.path; setConfettiNav(null); navigate(p); }}
         />
       )}

@@ -231,6 +231,36 @@ Libero rule update: libero CAN serve (S1) — no position restriction
 
 **Build:** Clean ✓ — 432KB gzip
 
+### 2026-03-13 — 8 New Volleyball Animations
+
+**index.css** — 8 new keyframes added: `jersey-pop`, `equalize-flash`, `tied-label-in`, `net-flash`, `pass-ripple`, `libero-ghost-exit`, `ball-arc-x/y/fade`, `tile-rotate-right/left/up/down`
+
+**PlayerTile.jsx:**
+- `flashEl()` made generic (accepts `cls` param, defaults `btn-flash`)
+- `jerseyRef` added to jersey number span — `jersey-pop` fires on every contact record
+- Pass ripple: `rippleKey`/`rippleColor` state; radial circle expands from tile on 0/1/2/3 tap (red/orange/yellow/green)
+
+**ScoreHeader.jsx:**
+- `EmberCanvas` component: rAF particle system inside RunStrip, activates at 5+ run, intensity scales with count
+- Equalize flash: `isTied` effect fires `tiedFlashKey` when newly tied at 20+; white flash overlay + "TIED" micro-label
+
+**CourtGrid.jsx:**
+- `ACTION`/`RESULT` imported from constants
+- Single `committedContacts` watcher dispatches: ball arc (ACE/KILL) + net flash (BLOCK/NET)
+- Ball arc: `BallArc` component — split translateX/Y parabola, `fixed` positioning, 680ms, clears via timer
+- Net flash: absolute orange gradient line at 50% height of grid, 480ms fade
+- Libero ghost: `liberoGhosts` Set tracks which grid indices had libero swap; emerald tint + blur vs standard white ghost
+- Rotation carousel: `ROTATION_NUDGE` array maps each cell to `tile-rotate-right/left/up/down`; replaces `tile-rotating` border-only flash with combined nudge + border keyframe
+
+**Build:** Clean ✓ — 451KB gzip
+
+### 2026-03-13 — Animation Wrap-Up
+
+- Reviewed all animation code from 2026-03-06 pass — confirmed fully implemented in codebase
+- Fixed `Confetti.jsx`: hardcoded "LAKE ZURICH WINS" → dynamic `{teamName || 'HOME'}<br />WINS`; added `teamName` prop
+- Wired `teamName` state from `LiveMatchPage` into `<Confetti>` call
+- **Build:** Clean ✓ — 451KB gzip (size increase is from additional modules added since Mar 6, not regression)
+
 ## Weekly Summaries
 
 ## Monthly Summaries

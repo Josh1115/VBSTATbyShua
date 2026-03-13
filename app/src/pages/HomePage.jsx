@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
@@ -79,17 +79,43 @@ export function HomePage() {
 
   const [ballKey, setBallKey] = useState(0);
   const [showBall, setShowBall] = useState(false);
+  const [isFloater, setIsFloater] = useState(false);
+  const [netRippling, setNetRippling] = useState(false);
 
   useEffect(() => {
     const trigger = () => {
+      const floater = Math.random() < 1 / 3;
+      setIsFloater(floater);
       setBallKey((k) => k + 1);
       setShowBall(true);
-      setTimeout(() => setShowBall(false), 1700);
+      setTimeout(() => setShowBall(false), floater ? 1900 : 1700);
     };
     const first = setTimeout(trigger, 2500);
     const interval = setInterval(trigger, 15000);
     return () => { clearTimeout(first); clearInterval(interval); };
   }, []);
+
+  const [displayRecord, setDisplayRecord] = useState({ wins: 0, losses: 0 });
+  const recordAnimated = useRef(false);
+
+  useEffect(() => {
+    if (!allTimeRecord || allTimeRecord.total === 0) return;
+    if (recordAnimated.current) {
+      setDisplayRecord({ wins: allTimeRecord.wins, losses: allTimeRecord.losses });
+      return;
+    }
+    recordAnimated.current = true;
+    const { wins, losses } = allTimeRecord;
+    const steps = 20;
+    let step = 0;
+    const timer = setInterval(() => {
+      step++;
+      const t = step / steps;
+      setDisplayRecord({ wins: Math.round(wins * t), losses: Math.round(losses * t) });
+      if (step >= steps) { clearInterval(timer); setDisplayRecord({ wins, losses }); }
+    }, 600 / steps);
+    return () => clearInterval(timer);
+  }, [allTimeRecord]);
 
   const inProgress = recentMatches?.find((m) => m.status === MATCH_STATUS.IN_PROGRESS);
   const displayMatches = recentMatches ?? [];
@@ -99,7 +125,7 @@ export function HomePage() {
       <header className="sticky top-0 z-20 bg-bg border-b border-slate-800 px-4 py-3 text-center relative">
         {/* Volleyball net watermark */}
         <svg
-          className="absolute inset-0 w-full h-full pointer-events-none overflow-hidden"
+          className={`absolute inset-0 w-full h-full pointer-events-none overflow-hidden${netRippling ? ' net-ripple' : ''}`}
           aria-hidden="true"
           viewBox="0 0 600 66"
           preserveAspectRatio="xMidYMid slice"
@@ -111,7 +137,7 @@ export function HomePage() {
             </pattern>
           </defs>
           {/* Net mesh */}
-          <rect x="0" y="30" width="600" height="24" fill="url(#vb-net-mesh)" />
+          <rect x="0" y="30" width="600" height="24" fill="url(#vb-net-mesh)" className="net-wave" />
           {/* Top white tape */}
           <rect x="0" y="25" width="600" height="6" fill="white" />
           {/* Bottom tape */}
@@ -128,7 +154,7 @@ export function HomePage() {
         <div className="absolute inset-0 crt-scanlines pointer-events-none overflow-hidden" aria-hidden="true" />
         {showBall && (
           <div key={ballKey} className="absolute inset-x-0 top-0 flex justify-center pointer-events-none z-10" aria-hidden="true">
-            <span className="text-3xl animate-spike-drop inline-block">🏐</span>
+            <span className={`text-3xl inline-block ${isFloater ? 'animate-floater-arc' : 'animate-spike-drop'}`}>🏐</span>
           </div>
         )}
         <h1 className="tracking-wide flex items-baseline justify-center gap-3">
@@ -141,9 +167,13 @@ export function HomePage() {
               color: '#f97316',
             }}
             onClick={() => {
+              const floater = Math.random() < 1 / 3;
+              setIsFloater(floater);
               setBallKey((k) => k + 1);
               setShowBall(true);
-              setTimeout(() => setShowBall(false), 1700);
+              setTimeout(() => setShowBall(false), floater ? 1900 : 1700);
+              setNetRippling(true);
+              setTimeout(() => setNetRippling(false), 450);
             }}
           >
             VBSTAT
@@ -221,8 +251,8 @@ export function HomePage() {
         {allTimeRecord && allTimeRecord.total > 0 && (
           <div className="flex items-center gap-4 px-1 animate-slide-up-fade" style={{ animationDelay: '200ms' }}>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-black px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-400">{allTimeRecord.wins}W</span>
-              <span className="text-xs font-black px-2 py-0.5 rounded bg-red-900/60 text-red-400">{allTimeRecord.losses}L</span>
+              <span className="text-xs font-black px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-400">{displayRecord.wins}W</span>
+              <span className="text-xs font-black px-2 py-0.5 rounded bg-red-900/60 text-red-400">{displayRecord.losses}L</span>
             </div>
             <span className="text-xs text-slate-500">{allTimeRecord.total} match{allTimeRecord.total !== 1 ? 'es' : ''} all time</span>
           </div>
