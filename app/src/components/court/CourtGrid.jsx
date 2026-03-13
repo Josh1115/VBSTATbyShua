@@ -146,6 +146,31 @@ function BallArc({ startX, startY }) {
   );
 }
 
+// #4 Kill / Ace burst — 8 particles radiate from contact point
+function KillBurst({ x, y, isAce }) {
+  const color = isAce ? '#f59e0b' : '#f97316';
+  return (
+    <div className="fixed pointer-events-none z-[998]" style={{ left: x, top: y }}>
+      {Array.from({ length: 8 }, (_, i) => {
+        const angle = (i / 8) * Math.PI * 2;
+        const dist  = 38 + (i % 2) * 18;
+        return (
+          <div
+            key={i}
+            className="kill-burst-dot"
+            style={{
+              '--dx': `${Math.cos(angle) * dist}px`,
+              '--dy': `${Math.sin(angle) * dist}px`,
+              background: color,
+              animationDelay: `${i * 16}ms`,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export const CourtGrid = memo(function CourtGrid() {
   const lineup            = useMatchStore((s) => s.lineup);
   const committedContacts = useMatchStore((s) => s.committedContacts);
@@ -159,11 +184,22 @@ export const CourtGrid = memo(function CourtGrid() {
   const inServeReceive = serveSide === 'them' && !inRally;
 
   // #1 Ball arc
-  const [ballArc,  setBallArc]  = useState(null); // { key, x, y } | null
+  const [ballArc,       setBallArc]       = useState(null); // { key, x, y } | null
+  // #4 Kill/ace burst
+  const [killBurst,     setKillBurst]     = useState(null); // { key, x, y, isAce } | null
   // #2 Net flash
-  const [netFlash, setNetFlash] = useState(0);
+  const [netFlash,      setNetFlash]      = useState(0);
   // #7 Libero ghosts — grid indices where the outgoing player was the libero
-  const [liberoGhosts, setLiberoGhosts] = useState(new Set());
+  const [liberoGhosts,  setLiberoGhosts]  = useState(new Set());
+  // #7 Rotation ghosts — pre-rotation cell snapshot for ghost fade-out during sweep
+  const [rotationGhosts, setRotationGhosts] = useState(null);
+  // #12 Court draw-in — one-shot on mount
+  const [showCourtDraw, setShowCourtDraw] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setShowCourtDraw(false), 1500);
+    return () => clearTimeout(t);
+  }, []);
 
   // Combined contact watcher — fires on new non-opponent contacts
   const prevContactsLenRef = useRef(0);
@@ -175,15 +211,20 @@ export const CourtGrid = memo(function CourtGrid() {
     const c = committedContacts[len - 1];
     if (!c || c.opponent_contact) return;
 
-    // #1 Ball arc on ACE or KILL
+    // #1 Ball arc + #4 Kill/Ace burst on ACE or KILL
     if ((c.action === ACTION.SERVE  && c.result === RESULT.ACE) ||
         (c.action === ACTION.ATTACK && c.result === RESULT.KILL)) {
       const el = playerRefs.current[c.player_id];
       if (el) {
-        const r = el.getBoundingClientRect();
-        setBallArc({ key: c.id ?? len, x: r.left + r.width * 0.5, y: r.top + r.height * 0.5 });
+        const r   = el.getBoundingClientRect();
+        const x   = r.left + r.width  * 0.5;
+        const y   = r.top  + r.height * 0.5;
+        const key = c.id ?? len;
+        const isAce = c.action === ACTION.SERVE;
+        setBallArc({ key, x, y });
+        setKillBurst({ key, x, y, isAce });
         clearTimeout(arcTimerRef.current);
-        arcTimerRef.current = setTimeout(() => setBallArc(null), 750);
+        arcTimerRef.current = setTimeout(() => { setBallArc(null); setKillBurst(null); }, 750);
       }
     }
 
@@ -194,17 +235,19 @@ export const CourtGrid = memo(function CourtGrid() {
     }
   }, [committedContacts]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Rotation flash — sweep clockwise across tiles when rotationNum increments
+  // Rotation flash + #7 ghost — sweep clockwise, ghost previous jerseys fading out
   const [rotating, setRotating] = useState(false);
   const prevRotNumRef = useRef(rotationNum);
   useEffect(() => {
     if (prevRotNumRef.current !== rotationNum) {
+      // Snapshot pre-rotation cells for ghost overlay (prevCellsRef still holds old cells here)
+      setRotationGhosts(prevCellsRef.current ? [...prevCellsRef.current] : null);
       prevRotNumRef.current = rotationNum;
       setRotating(true);
-      const t = setTimeout(() => setRotating(false), 600);
+      const t = setTimeout(() => { setRotating(false); setRotationGhosts(null); }, 600);
       return () => clearTimeout(t);
     }
-  }, [rotationNum]);
+  }, [rotationNum]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sub flash + sub ghost — detect which tile changed player without a rotation
   const [subFlashIds, setSubFlashIds] = useState(new Set());
@@ -320,7 +363,7 @@ export const CourtGrid = memo(function CourtGrid() {
           return (
             <div
               key={slot?.position ?? gridIdx}
-              className={cellClass}
+              className={`${cellClass} overflow-hidden`}
               style={cellStyle}
               ref={(el) => { if (el && slot?.playerId) playerRefs.current[slot.playerId] = el; }}
             >
@@ -332,14 +375,26 @@ export const CourtGrid = memo(function CourtGrid() {
                 isSubIn={subFlashIds.has(slot?.playerId)}
                 isDimmed={inServeReceive && gridIdx < 3}
               />
+              {/* Sub swap slide — outgoing name falls down-and-blurs (#9) */}
               {subGhosts[gridIdx] && (
-                <div className={`absolute top-0 inset-x-0 h-[38%] pointer-events-none flex items-center justify-center ${liberoGhosts.has(gridIdx) ? 'libero-ghost-exit' : 'sub-ghost-exit'}`}>
-                  {/* #7 libero ghost: emerald tint; regular sub: white */}
+                <div className={`absolute top-0 inset-x-0 h-[42%] pointer-events-none flex items-center justify-center ${liberoGhosts.has(gridIdx) ? 'libero-ghost-exit' : 'sub-ghost-exit'}`}>
                   <span
                     className={`font-bold uppercase tracking-wider ${liberoGhosts.has(gridIdx) ? 'text-emerald-400/70' : 'text-white/55'}`}
                     style={{ fontSize: '3.15vmin', letterSpacing: '0.18em' }}
                   >
                     {subGhosts[gridIdx]}
+                  </span>
+                </div>
+              )}
+              {/* Libero swap trail — emerald shimmer sweep (#8) */}
+              {liberoGhosts.has(gridIdx) && (
+                <div className="libero-swap-trail absolute inset-0 pointer-events-none z-[15]" />
+              )}
+              {/* Rotation ghost — previous jersey expands/blurs out during sweep (#7) */}
+              {rotationGhosts?.[gridIdx]?.jersey !== undefined && rotating && (
+                <div className="rotation-ghost-exit absolute inset-0 pointer-events-none z-[12] flex items-center justify-center">
+                  <span className="font-black text-white/20" style={{ fontSize: '7vmin' }}>
+                    {rotationGhosts[gridIdx].jersey}
                   </span>
                 </div>
               )}
@@ -360,6 +415,34 @@ export const CourtGrid = memo(function CourtGrid() {
             }}
           />
         )}
+
+        {/* #12 Court lines draw-in — one-shot SVG on mount */}
+        {showCourtDraw && (
+          <svg
+            className="court-draw-overlay absolute inset-0 w-full h-full pointer-events-none z-30"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            {/* Center horizontal — net boundary */}
+            <line x1="0%" y1="50%" x2="100%" y2="50%"
+              stroke="#f97316" strokeWidth="2.5" opacity="0.65"
+              className="court-line-h"
+              style={{ animationDelay: '80ms' }}
+            />
+            {/* Left vertical divider */}
+            <line x1="33.33%" y1="0%" x2="33.33%" y2="100%"
+              stroke="#f97316" strokeWidth="1" opacity="0.35"
+              className="court-line-v"
+              style={{ animationDelay: '260ms' }}
+            />
+            {/* Right vertical divider */}
+            <line x1="66.66%" y1="0%" x2="66.66%" y2="100%"
+              stroke="#f97316" strokeWidth="1" opacity="0.35"
+              className="court-line-v"
+              style={{ animationDelay: '380ms' }}
+            />
+          </svg>
+        )}
       </div>
 
       {/* #1 Ball arc — fixed overlay, outside grid so it flies across the full viewport */}
@@ -368,6 +451,16 @@ export const CourtGrid = memo(function CourtGrid() {
           key={ballArc.key}
           startX={ballArc.x}
           startY={ballArc.y}
+        />
+      )}
+
+      {/* #4 Kill/Ace burst — particles radiate from contact point */}
+      {killBurst && (
+        <KillBurst
+          key={killBurst.key}
+          x={killBurst.x}
+          y={killBurst.y}
+          isAce={killBurst.isAce}
         />
       )}
     </>
