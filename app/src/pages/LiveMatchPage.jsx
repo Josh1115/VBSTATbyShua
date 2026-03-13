@@ -18,6 +18,7 @@ import { TimeoutOverlay } from '../components/match/TimeoutOverlay';
 import { OppScoringColumn } from '../components/match/OppScoringColumn';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Confetti } from '../components/ui/Confetti';
+import { SetSummaryModal } from '../components/match/SetSummaryModal';
 
 export function LiveMatchPage() {
   const { matchId: matchIdParam } = useParams();
@@ -35,6 +36,7 @@ export function LiveMatchPage() {
 
   const [liberoPlayer,        setLiberoPlayer]        = useState(null);
   const [confettiNav,         setConfettiNav]         = useState(null); // { path, matchWin } | null
+  const [setSummaryData,      setSetSummaryData]      = useState(null); // { winner } | null
   const [teamName,            setTeamName]            = useState('');
   const [opponentName,        setOpponentName]        = useState('');
   const [liveStatsDefaultTab, setLiveStatsDefaultTab] = useState(null);
@@ -53,8 +55,9 @@ export function LiveMatchPage() {
   const oppSetsWon          = useMatchStore((s) => s.oppSetsWon);
   const format              = useMatchStore((s) => s.format);
 
-  const teamId = useMatchStore((s) => s.teamId);
-  const pointHistory = useMatchStore((s) => s.pointHistory);
+  const teamId     = useMatchStore((s) => s.teamId);
+  const pointHistory  = useMatchStore((s) => s.pointHistory);
+  const currentRun    = useMatchStore((s) => s.currentRun);
 
   const { playerStats, teamStats } = useMatchStats();
 
@@ -208,10 +211,22 @@ export function LiveMatchPage() {
     );
   }
 
+  const scanlineAlpha = currentRun.count >= 7 ? 0.06
+    : currentRun.count >= 5 ? 0.045
+    : currentRun.count >= 3 ? 0.03
+    : 0.015;
+
   return (
     // Full viewport, no scroll, column layout
     // h-dvh = dynamic viewport height (accounts for iOS Safari browser chrome)
     <div className="w-screen flex flex-col bg-court overflow-hidden" style={{ height: screenH }}>
+
+      {/* CRT scanline overlay — intensity scales with run count */}
+      <div
+        className="absolute inset-0 crt-scanlines-live pointer-events-none z-[5]"
+        aria-hidden="true"
+        style={{ '--scanline-alpha': scanlineAlpha }}
+      />
 
       {/* Portrait orientation guard — Safari on iPad ignores orientation lock */}
       {isPortrait && (
@@ -283,6 +298,29 @@ export function LiveMatchPage() {
         />
       )}
 
+      {setSummaryData && (
+        <SetSummaryModal
+          winner={setSummaryData.winner}
+          teamName={teamName}
+          opponentName={opponentName}
+          onContinue={async () => {
+            const { winner } = setSummaryData;
+            setSetSummaryData(null);
+            if (pendingAlerts.length > 0) {
+              markPendingShown();
+              setLiveStatsDefaultTab('RECORDS');
+              setStatsOpen(true);
+            }
+            await endSet(winner);
+            if (winner === SIDE.US) {
+              setConfettiNav({ path: `/matches/${matchIdParam}/set-lineup`, matchWin: false });
+            } else {
+              navigate(`/matches/${matchIdParam}/set-lineup`);
+            }
+          }}
+        />
+      )}
+
       {pendingSetWin && (() => {
         const setsNeeded  = format === FORMAT.BEST_OF_3 ? 2 : 3;
         const newSetsUs   = ourSetsWon + (pendingSetWin === SIDE.US   ? 1 : 0);
@@ -309,17 +347,10 @@ export function LiveMatchPage() {
                   navigate(`/matches/${matchIdParam}/summary`);
                 }
               } else {
-                await endSet(pendingSetWin);
+                // Show set summary before transitioning to next set
+                const winner = pendingSetWin;
                 clearPendingSetWin();
-                if (pendingAlerts.length > 0) {
-                  markPendingShown();
-                  setLiveStatsDefaultTab('RECORDS');
-                  setStatsOpen(true);
-                } else if (pendingSetWin === SIDE.US) {
-                  setConfettiNav({ path: `/matches/${matchIdParam}/set-lineup`, matchWin: false });
-                } else {
-                  navigate(`/matches/${matchIdParam}/set-lineup`);
-                }
+                setSetSummaryData({ winner });
               }
             }}
             onCancel={clearPendingSetWin}

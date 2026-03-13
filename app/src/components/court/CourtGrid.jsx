@@ -257,6 +257,7 @@ export const CourtGrid = memo(function CourtGrid() {
               isServer={isServer}
               heat={heat}
               isSubIn={subFlashIds.has(slot?.playerId)}
+              isDimmed={inServeReceive && gridIdx < 3}
             />
             {subGhosts[gridIdx] && (
               <div className="absolute top-0 inset-x-0 h-[38%] pointer-events-none flex items-center justify-center sub-ghost-exit">

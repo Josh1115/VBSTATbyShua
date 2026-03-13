@@ -436,3 +436,64 @@
 .fab-glow {
   animation: fab-breathe 2s ease-in-out infinite;
 }
+
+/* ── Pass quality ring flash ── */
+@keyframes pass-ring-flash {
+  0%   { box-shadow: inset 0 0 0 3px var(--ring-color), 0 0 8px var(--ring-color); }
+  100% { box-shadow: inset 0 0 0 0   transparent,       0 0 0   transparent; }
+}
+.pass-ring-0 { --ring-color: #ef4444; animation: pass-ring-flash 500ms ease-out forwards; }
+.pass-ring-1 { --ring-color: #f97316; animation: pass-ring-flash 500ms ease-out forwards; }
+.pass-ring-2 { --ring-color: #eab308; animation: pass-ring-flash 500ms ease-out forwards; }
+.pass-ring-3 { --ring-color: #22c55e; animation: pass-ring-flash 500ms ease-out forwards; }
+
+/* ── Set point / match point score glow ── */
+@keyframes setpoint-breathe {
+  0%, 100% { text-shadow: none; }
+  50%       { text-shadow: 0 0 12px #fbbf24, 0 0 28px rgba(251,191,36,0.5); }
+}
+@keyframes matchpoint-breathe {
+  0%, 100% { text-shadow: 0 0 8px #f97316, 0 0 18px rgba(249,115,22,0.4); }
+  50%       { text-shadow: 0 0 18px #f97316, 0 0 36px rgba(249,115,22,0.7), 0 0 52px rgba(249,115,22,0.3); }
+}
+.setpoint-glow   { animation: setpoint-breathe  1.4s ease-in-out infinite; color: #fbbf24 !important; }
+.matchpoint-glow { animation: matchpoint-breathe 0.85s ease-in-out infinite; color: #fb923c !important; }
+
+/* ── Score proximity tension (late game, within 1 point) ── */
+@keyframes score-tension {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.022); }
+}
+.score-tension {
+  animation: score-tension 2s ease-in-out infinite;
+  transform-origin: center;
+}
+
+/* ── CRT scanlines for live match (intensity via CSS variable) ── */
+.crt-scanlines-live {
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    rgba(0, 0, 0, var(--scanline-alpha, 0.015)) 2px,
+    rgba(0, 0, 0, var(--scanline-alpha, 0.015)) 4px
+  );
+}
+
+/* ── First contact dim overlay fade-in ── */
+@keyframes first-contact-dim {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.first-contact-overlay {
+  animation: first-contact-dim 400ms ease-out both;
+}
+
+/* ── Set summary modal entrance ── */
+@keyframes set-summary-in {
+  from { opacity: 0; transform: translateY(24px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+.animate-set-summary-in {
+  animation: set-summary-in 420ms var(--ease-spring) both;
+}

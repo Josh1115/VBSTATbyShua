@@ -78,7 +78,7 @@ const fmtName = (name) => {
   return `${parts[0][0]}. ${parts[parts.length - 1]}`;
 };
 
-export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, heat, isSubIn = false }) {
+export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, heat, isSubIn = false, isDimmed = false }) {
   const recordContact     = useMatchStore((s) => s.recordContact);
   const addPoint          = useMatchStore((s) => s.addPoint);
   const tapHblk           = useMatchStore((s) => s.tapHblk);
@@ -98,6 +98,8 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const numberColor  = (jerseyColor === 'gray' || jerseyColor === 'white') ? '#1e293b' : '#f1f5f9';
   const [serveType,     setServeType]     = useState(null);
   const [serveRecorded, setServeRecorded] = useState(false);
+  const [passRing,      setPassRing]      = useState(null); // null | 0|1|2|3
+  const passRingTimer = useRef(null);
 
   useEffect(() => {
     setServeRecorded(false);
@@ -118,6 +120,14 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const tapAndScoreThem = async (action, result, extra = {}) => {
     await recordContact({ player_id: slot.playerId, action, result, ...extra });
     await addPoint(SIDE.THEM);
+  };
+
+  const tapPass = (rating, scoreThem = false) => {
+    if (scoreThem) tapAndScoreThem(ACTION.PASS, String(rating));
+    else           tap(ACTION.PASS, String(rating));
+    clearTimeout(passRingTimer.current);
+    setPassRing(rating);
+    passRingTimer.current = setTimeout(() => setPassRing(null), 520);
   };
 
   // HBLK visual state for this tile
@@ -141,12 +151,22 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const coldCount = heatVals.filter(v => v === 'cold').length;
   const tileHeat  = hotCount > coldCount ? 'hot' : coldCount > hotCount ? 'cold' : null;
 
+  const passRingClass = passRing === 0 ? 'pass-ring-0'
+    : passRing === 1 ? 'pass-ring-1'
+    : passRing === 2 ? 'pass-ring-2'
+    : passRing === 3 ? 'pass-ring-3'
+    : '';
+
   return (
-    <div className={`flex flex-col h-full w-full overflow-hidden border
+    <div className={`relative flex flex-col h-full w-full overflow-hidden border
       ${isServer ? 'bg-orange-950/30' : 'bg-slate-900'}
       ${tileHeat === 'hot'  ? 'border-orange-400/40 shadow-[inset_0_0_12px_rgba(251,146,60,0.08)]' : ''}
       ${tileHeat === 'cold' ? 'border-blue-400/30   shadow-[inset_0_0_12px_rgba(96,165,250,0.06)]'  : ''}
-      ${!tileHeat ? 'border-slate-800/60' : ''}`}>
+      ${!tileHeat ? 'border-slate-800/60' : ''}
+      ${passRingClass}`}>
+      {isDimmed && (
+        <div className="absolute inset-0 bg-slate-900/55 pointer-events-none z-10 first-contact-overlay" />
+      )}
 
       {/* ── Player badge strip ── */}
       <div className="flex-[8_1_0%] min-h-[0.2275vmin] relative flex items-center justify-center px-2 bg-black/40 border-b border-slate-700/50 overflow-hidden">
@@ -223,10 +243,10 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
           <div className="serve-row-in">
             <div className="px-[7.5%]"><span className="text-[1.3vmin] font-bold uppercase tracking-wide text-slate-500 leading-none">Serving</span></div>
             <div className="flex flex-none h-[3.837vmin] py-0 px-[7.5%] gap-[0.5vmin] border-b border-black/30">
-              <Btn label="FL"
+              <Btn label="FLOAT"
                 onTap={() => setServeType(SERVE_TYPE.FLOAT)}
                 cls={serveType === SERVE_TYPE.FLOAT ? 'bg-emerald-700/80 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'} />
-              <Btn label="TS"
+              <Btn label="TOP"
                 onTap={() => setServeType(SERVE_TYPE.TOPSPIN)}
                 cls={serveType === SERVE_TYPE.TOPSPIN ? 'bg-teal-600/80 text-white' : 'bg-violet-900/70 text-violet-400 hover:bg-violet-800/70'} />
               <Btn key={`att-${!!serveType}`} label="ATT"
@@ -287,10 +307,10 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
         {/* Row 4 — Pass ratings: 0 1 2 3 */}
         <div className="px-[7.5%]"><span className="text-[1.3vmin] font-bold uppercase tracking-wide text-slate-500 leading-none">S/R</span></div>
         <div className="flex flex-none h-[3.837vmin] py-0 px-[7.5%] gap-[0.5vmin] border-b border-black/30">
-          <Btn label="0" onTap={() => tapAndScoreThem(ACTION.PASS, '0')} cls="bg-red-950/80 text-red-300 hover:bg-red-900/80" />
-          <Btn label="1" onTap={() => tap(ACTION.PASS, '1')} cls="bg-yellow-950/80 text-yellow-300 hover:bg-yellow-900/80" />
-          <Btn label="2" onTap={() => tap(ACTION.PASS, '2')} cls="bg-lime-950/80 text-lime-300 hover:bg-lime-900/80" />
-          <Btn label="3" onTap={() => tap(ACTION.PASS, '3')} cls="bg-teal-900/80 text-teal-200 hover:bg-teal-800/90" />
+          <Btn label="0" onTap={() => tapPass(0, true)}  cls="bg-red-950/80 text-red-300 hover:bg-red-900/80" />
+          <Btn label="1" onTap={() => tapPass(1, false)} cls="bg-yellow-950/80 text-yellow-300 hover:bg-yellow-900/80" />
+          <Btn label="2" onTap={() => tapPass(2, false)} cls="bg-lime-950/80 text-lime-300 hover:bg-lime-900/80" />
+          <Btn label="3" onTap={() => tapPass(3, false)} cls="bg-teal-900/80 text-teal-200 hover:bg-teal-800/90" />
         </div>
 
         {/* Row 5 — Penalty errors: L DBL NET (opponent scores) */}

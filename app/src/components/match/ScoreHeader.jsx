@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { useMatchStore } from '../../store/matchStore';
 import { useMatchStats } from '../../hooks/useMatchStats';
-import { SIDE } from '../../constants';
+import { SIDE, FORMAT } from '../../constants';
 import { LiberoBox } from './LiberoBox';
 
 const HOLD_MS = 3000;
@@ -167,6 +167,7 @@ export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, o
   const currentRun    = useMatchStore((s) => s.currentRun);
   const lastFeedItem  = useMatchStore((s) => s.lastFeedItem);
   const pointHistory  = useMatchStore((s) => s.pointHistory);
+  const format        = useMatchStore((s) => s.format);
 
   const { teamStats, oppStats } = useMatchStats();
 
@@ -229,6 +230,19 @@ export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, o
   const nudgeSide = nudgeOpen === 'us' ? SIDE.US : SIDE.THEM;
   const nudgeLabel = nudgeOpen === 'us' ? (teamName || 'HOME') : (opponentName || 'AWAY');
 
+  // Set point / match point detection
+  const setsNeeded   = format === FORMAT.BEST_OF_3 ? 2 : 3;
+  const spStart      = setNumber === 5 ? 14 : 24;
+  const ourSetPt     = ourScore >= spStart && ourScore > oppScore;
+  const theirSetPt   = oppScore >= spStart && oppScore > ourScore;
+  const ourMatchPt   = ourSetPt   && ourSetsWon  === setsNeeded - 1;
+  const theirMatchPt = theirSetPt && oppSetsWon  === setsNeeded - 1;
+  const ourScoreCls  = ourMatchPt   ? 'matchpoint-glow' : ourSetPt   ? 'setpoint-glow' : '';
+  const theirScoreCls= theirMatchPt ? 'matchpoint-glow' : theirSetPt ? 'setpoint-glow' : '';
+
+  // Score proximity tension — tied or within 1 at 20+
+  const tense = (ourScore >= 20 || oppScore >= 20) && Math.abs(ourScore - oppScore) <= 1;
+
   return (
     // Outer wrapper — always flex-none, total height = 66px header + 24px run strip
     <div className="flex-none flex flex-col">
@@ -274,7 +288,7 @@ export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, o
         <div className="flex-1" />
 
         {/* ── Center: absolutely centered score block ── */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
+        <div className={`absolute left-1/2 -translate-x-1/2 flex items-center gap-2${tense ? ' score-tension' : ''}`}>
           {/* home team name — always a 3-letter abbreviation */}
           <span className="text-[2.9vmin] text-slate-100 font-bold uppercase tracking-widest leading-none">
             {teamName || 'HOM'}
@@ -288,7 +302,7 @@ export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, o
             className={`cursor-pointer select-none transition-opacity overflow-hidden leading-none ${usHolding ? 'opacity-40' : ''}`}
             title="Hold 3s to adjust score"
           >
-            <span key={`us-${ourScore}`} className="block text-[4.2vmin] font-black tabular-nums leading-none score-pop">
+            <span key={`us-${ourScore}`} className={`block text-[4.2vmin] font-black tabular-nums leading-none score-pop ${ourScoreCls}`}>
               {String(ourScore).padStart(2, '0')}
             </span>
           </div>
@@ -315,7 +329,7 @@ export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, o
             className={`cursor-pointer select-none transition-opacity overflow-hidden leading-none ${themHolding ? 'opacity-40' : ''}`}
             title="Hold 3s to adjust score"
           >
-            <span key={`them-${oppScore}`} className="block text-[4.2vmin] font-black tabular-nums leading-none score-pop">
+            <span key={`them-${oppScore}`} className={`block text-[4.2vmin] font-black tabular-nums leading-none score-pop ${theirScoreCls}`}>
               {String(oppScore).padStart(2, '0')}
             </span>
           </div>
