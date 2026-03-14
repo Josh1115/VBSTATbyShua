@@ -51,12 +51,23 @@ function useDefaultFormat() {
   return [defaultFormat, save];
 }
 
+function useAmoledMode() {
+  const [amoled, setAmoledState] = useState(() => localStorage.getItem('vbstat_amoled') === '1');
+  const save = (val) => {
+    localStorage.setItem('vbstat_amoled', val ? '1' : '0');
+    document.documentElement.classList.toggle('amoled', val);
+    setAmoledState(val);
+  };
+  return [amoled, save];
+}
+
 export function SettingsPage() {
   const showToast    = useUiStore((s) => s.showToast);
   const fileInputRef = useRef(null);
   const [maxSubs, saveMaxSubs]           = useMaxSubs();
   const [defaultFormat, saveDefaultFormat] = useDefaultFormat();
 
+  const [amoled, saveAmoled] = useAmoledMode();
   const [confirmClear,   setConfirmClear]   = useState(false);
   const [confirmImport,  setConfirmImport]  = useState(false);
   const [pendingFile,    setPendingFile]    = useState(null);
@@ -163,6 +174,29 @@ export function SettingsPage() {
             {' '}({(usagePct * 100).toFixed(1)}%)
           </div>
         )}
+
+        {/* Display */}
+        <section className="bg-surface rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-700">
+            <h2 className="font-semibold">Display</h2>
+          </div>
+          <div className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium">AMOLED Mode</div>
+                <div className="text-xs text-slate-400 mt-0.5">Pure black background — saves battery on OLED screens</div>
+              </div>
+              <button
+                onClick={() => saveAmoled(!amoled)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${amoled ? 'bg-primary' : 'bg-slate-600'}`}
+                aria-checked={amoled}
+                role="switch"
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${amoled ? 'translate-x-5' : ''}`} />
+              </button>
+            </div>
+          </div>
+        </section>
 
         {/* Match Rules */}
         <section className="bg-surface rounded-xl overflow-hidden">

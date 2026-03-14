@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
@@ -16,9 +16,14 @@ import { RotationSpotlight } from '../components/stats/RotationSpotlight';
 import { PointQualityPanel } from '../components/stats/PointQualityPanel';
 import { RotationRadarChart } from '../components/charts/RotationRadarChart';
 import { CourtHeatMap } from '../components/charts/CourtHeatMap';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Cell, RadialBarChart, RadialBar, Legend,
+} from 'recharts';
 
 const TABS = [
   { value: 'points',    label: 'Points'    },
+  { value: 'trends',    label: 'Trends'    },
   { value: 'serving',   label: 'Serving'   },
   { value: 'passing',   label: 'Passing'   },
   { value: 'attacking', label: 'Attacking' },
@@ -26,7 +31,281 @@ const TABS = [
   { value: 'defense',   label: 'Defense'   },
   { value: 'setting',   label: 'Setting'   },
   { value: 'rotation',  label: 'Rotation'  },
+  { value: 'compare',   label: 'Compare'   },
 ];
+
+// ── Match Notes ──────────────────────────────────────────────────────────────
+
+function MatchNotes({ matchId, initialNotes }) {
+  const [notes, setNotes] = useState(initialNotes ?? '');
+  const timerRef = useRef(null);
+
+  function handleChange(e) {
+    const v = e.target.value;
+    setNotes(v);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      db.matches.update(matchId, { notes: v });
+    }, 600);
+  }
+
+  return (
+    <div className="px-4 mt-3">
+      <label className="block text-xs text-slate-400 mb-1 font-medium">Coach Notes</label>
+      <textarea
+        value={notes}
+        onChange={handleChange}
+        placeholder="Add notes about this match…"
+        className="w-full bg-surface border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 resize-none focus:outline-none focus:border-primary/60 transition-colors"
+        rows={3}
+      />
+    </div>
+  );
+}
+
+// ── Set-by-Set Trend Chart ───────────────────────────────────────────────────
+
+function computeSetTrends(contacts, sets) {
+  if (!contacts?.length || !sets?.length) return [];
+  const setNumById = Object.fromEntries(sets.map(s => [s.id, s.set_number]));
+  const bySet = {};
+  for (const c of contacts) {
+    const sn = setNumById[c.set_id];
+    if (!sn) continue;
+    if (!bySet[sn]) bySet[sn] = { ta: 0, k: 0, ae: 0, pa: 0, p0: 0, p1: 0, p2: 0, p3: 0, sa: 0, ace: 0, se: 0 };
+    const s = bySet[sn];
+    if (c.action === 'attack') {
+      s.ta++; if (c.result === 'kill') s.k++; if (c.result === 'error') s.ae++;
+    } else if (c.action === 'pass') {
+      s.pa++;
+      if (c.result === '0') s.p0++;
+      else if (c.result === '1') s.p1++;
+      else if (c.result === '2') s.p2++;
+      else if (c.result === '3') s.p3++;
+    } else if (c.action === 'serve') {
+      s.sa++; if (c.result === 'ace') s.ace++; if (c.result === 'error') s.se++;
+    }
+  }
+  return Object.entries(bySet)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([sn, s]) => ({
+      name: `Set ${sn}`,
+      'K%':    s.ta ? Math.round(s.k / s.ta * 100) : 0,
+      'HIT%':  s.ta ? Math.round((s.k - s.ae) / s.ta * 100) : 0,
+      'APR':   s.pa ? Math.round(((s.p1 * 1 + s.p2 * 2 + s.p3 * 3) / s.pa) * 100) / 100 : 0,
+      'ACE%':  s.sa ? Math.round(s.ace / s.sa * 100) : 0,
+      'SE%':   s.sa ? Math.round(s.se  / s.sa * 100) : 0,
+    }));
+}
+
+const TREND_METRICS = [
+  { key: 'K%',   color: '#f97316', label: 'Kill %'     },
+  { key: 'HIT%', color: '#60a5fa', label: 'Hitting %'  },
+  { key: 'APR',  color: '#4ade80', label: 'Pass Rating' },
+  { key: 'ACE%', color: '#c084fc', label: 'Ace %'      },
+];
+
+function SetTrendsChart({ contacts, sets }) {
+  const [metric, setMetric] = useState('K%');
+  const data = useMemo(() => computeSetTrends(contacts, sets), [contacts, sets]);
+  const curr = TREND_METRICS.find(m => m.key === metric);
+
+  if (!data.length) return <p className="text-slate-500 text-sm text-center py-6">No data yet.</p>;
+
+  return (
+    <div className="space-y-3">
+      {/* Metric selector */}
+      <div className="flex gap-1">
+        {TREND_METRICS.map(m => (
+          <button
+            key={m.key}
+            onClick={() => setMetric(m.key)}
+            className={`flex-1 py-1.5 rounded text-xs font-bold transition-colors ${
+              metric === m.key ? 'text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+            }`}
+            style={metric === m.key ? { backgroundColor: m.color + '33', color: m.color, border: `1px solid ${m.color}66` } : {}}
+          >
+            {m.key}
+          </button>
+        ))}
+      </div>
+
+      <ResponsiveContainer width="100%" height={200}>
+        <BarChart data={data} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+          <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+          <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} />
+          <Tooltip
+            contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+            labelStyle={{ color: '#cbd5e1' }}
+            itemStyle={{ color: curr?.color }}
+          />
+          <Bar dataKey={metric} radius={[4, 4, 0, 0]} fill={curr?.color ?? '#f97316'} />
+        </BarChart>
+      </ResponsiveContainer>
+
+      {/* Per-set summary row */}
+      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${data.length}, 1fr)` }}>
+        {data.map(d => (
+          <div key={d.name} className="bg-surface rounded-lg p-2 text-center">
+            <div className="text-xs text-slate-400">{d.name}</div>
+            <div className="font-bold text-sm" style={{ color: curr?.color }}>
+              {metric === 'APR' ? d[metric].toFixed(2) : `${d[metric]}%`}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Player Comparison ────────────────────────────────────────────────────────
+
+const COMPARE_STATS = [
+  { key: 'k',       label: 'Kills',      fmt: fmtCount     },
+  { key: 'ta',      label: 'Attacks',    fmt: fmtCount     },
+  { key: 'k_pct',   label: 'K%',         fmt: fmtPct       },
+  { key: 'hit_pct', label: 'HIT%',       fmt: fmtHitting   },
+  { key: 'sa',      label: 'Serves',     fmt: fmtCount     },
+  { key: 'ace',     label: 'Aces',       fmt: fmtCount     },
+  { key: 'ace_pct', label: 'ACE%',       fmt: fmtPct       },
+  { key: 'pa',      label: 'Passes',     fmt: fmtCount     },
+  { key: 'apr',     label: 'APR',        fmt: fmtPassRating },
+  { key: 'p3',      label: 'P3s',        fmt: fmtCount     },
+  { key: 'dig',     label: 'Digs',       fmt: fmtCount     },
+  { key: 'bs',      label: 'Solo Blks',  fmt: fmtCount     },
+  { key: 'ba',      label: 'Blk Asst',   fmt: fmtCount     },
+  { key: 'ast',     label: 'Assists',    fmt: fmtCount     },
+];
+
+const POS_COLORS = { S: '#60a5fa', OH: '#fb923c', MB: '#4ade80', OPP: '#c084fc', L: '#34d399', DS: '#94a3b8' };
+
+function PlayerComparison({ playerRows }) {
+  const ids = playerRows.map(r => String(r.id));
+  const [p1Id, setP1Id] = useState(ids[0] ?? '');
+  const [p2Id, setP2Id] = useState(ids[1] ?? '');
+
+  const p1 = playerRows.find(r => String(r.id) === p1Id);
+  const p2 = playerRows.find(r => String(r.id) === p2Id);
+
+  function PlayerSelect({ value, onChange }) {
+    return (
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="flex-1 bg-surface border border-slate-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-primary/60"
+      >
+        {playerRows.map(r => (
+          <option key={r.id} value={String(r.id)}>{r.name}</option>
+        ))}
+      </select>
+    );
+  }
+
+  function StatBar({ v1, v2 }) {
+    const max = Math.max(v1 ?? 0, v2 ?? 0);
+    if (!max) return null;
+    const pct1 = max ? Math.round((v1 ?? 0) / max * 100) : 0;
+    const pct2 = max ? Math.round((v2 ?? 0) / max * 100) : 0;
+    return (
+      <div className="flex gap-0.5 h-1 rounded-full overflow-hidden bg-slate-800 my-1">
+        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct1}%` }} />
+        <div className="flex-1" />
+        <div className="h-full rounded-full bg-sky-400 transition-all" style={{ width: `${pct2}%` }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        <PlayerSelect value={p1Id} onChange={setP1Id} />
+        <span className="self-center text-slate-500 font-bold text-sm">vs</span>
+        <PlayerSelect value={p2Id} onChange={setP2Id} />
+      </div>
+
+      {p1 && p2 && (
+        <>
+          {/* Player header chips */}
+          <div className="flex gap-2">
+            {[p1, p2].map((p, i) => (
+              <div key={p.id} className={`flex-1 rounded-xl p-3 text-center ${i === 0 ? 'bg-primary/15 border border-primary/30' : 'bg-sky-400/10 border border-sky-400/30'}`}>
+                <div className="font-bold text-sm">{p.name}</div>
+                {p.position && (
+                  <div className="text-xs mt-0.5 font-semibold" style={{ color: POS_COLORS[p.position] ?? '#94a3b8' }}>
+                    {p.position}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Stat rows */}
+          <div className="bg-surface rounded-xl overflow-hidden">
+            {COMPARE_STATS.map(({ key, label, fmt }) => {
+              const v1 = p1[key];
+              const v2 = p2[key];
+              if (v1 == null && v2 == null) return null;
+              const f1 = fmt ? fmt(v1) : (v1 ?? '—');
+              const f2 = fmt ? fmt(v2) : (v2 ?? '—');
+              if (f1 === '—' && f2 === '—') return null;
+              const n1 = v1 ?? 0;
+              const n2 = v2 ?? 0;
+              const better1 = n1 > n2;
+              const better2 = n2 > n1;
+              return (
+                <div key={key} className="px-3 py-2 border-b border-slate-700/50 last:border-0">
+                  <div className="flex items-center">
+                    <span className={`w-16 text-right text-sm font-bold tabular-nums ${better1 ? 'text-primary' : 'text-slate-300'}`}>{f1}</span>
+                    <span className="flex-1 text-center text-xs text-slate-400 px-2">{label}</span>
+                    <span className={`w-16 text-left text-sm font-bold tabular-nums ${better2 ? 'text-sky-400' : 'text-slate-300'}`}>{f2}</span>
+                  </div>
+                  <StatBar v1={n1} v2={n2} />
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {playerRows.length < 2 && (
+        <p className="text-slate-500 text-sm text-center py-6">Need at least 2 players with stats to compare.</p>
+      )}
+    </div>
+  );
+}
+
+// ── Rotation Bar Chart ───────────────────────────────────────────────────────
+
+function RotationBarChart({ rotationRows }) {
+  const data = rotationRows.map(r => ({
+    name: `R${r.id}`,
+    'SO%': r.so_pct != null ? Math.round(r.so_pct * 100) : 0,
+    'BP%': r.bp_pct != null ? Math.round(r.bp_pct * 100) : 0,
+  }));
+
+  if (!data.length) return null;
+
+  return (
+    <div>
+      <div className="text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">SO% &amp; BP% by Rotation</div>
+      <ResponsiveContainer width="100%" height={160}>
+        <BarChart data={data} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+          <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+          <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} unit="%" domain={[0, 100]} />
+          <Tooltip
+            contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+            labelStyle={{ color: '#cbd5e1' }}
+            formatter={(v) => `${v}%`}
+          />
+          <Bar dataKey="SO%" fill="#f97316" radius={[3, 3, 0, 0]} />
+          <Bar dataKey="BP%" fill="#60a5fa" radius={[3, 3, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
 
 const SERVING_COLS = {
   all: [
@@ -236,6 +515,9 @@ export function MatchSummaryPage() {
               </div>
             )}
 
+            {/* Match Notes */}
+            <MatchNotes matchId={id} initialNotes={match.notes ?? ''} />
+
             {/* Export bar */}
             <div className="flex gap-2 mt-3">
               <Button size="sm" variant="secondary" disabled={!stats} onClick={handlePDF}>
@@ -276,6 +558,14 @@ export function MatchSummaryPage() {
               <PointQualityPanel pq={stats.pointQuality} />
             )}
 
+            {tab === 'trends' && (
+              <SetTrendsChart contacts={contacts} sets={sets ?? []} />
+            )}
+
+            {tab === 'compare' && (
+              <PlayerComparison playerRows={playerRows} />
+            )}
+
             {tab === 'serving' && (
               <>
                 <div className="flex gap-1 mb-3">
@@ -306,6 +596,7 @@ export function MatchSummaryPage() {
 
             {tab === 'rotation' && stats?.rotation && (
               <div className="space-y-6">
+                <RotationBarChart rotationRows={rotationRows} />
                 <RotationRadarChart rotationStats={stats.rotation} />
                 <RotationSpotlight rows={rotationRows} />
                 <StatTable columns={ROTATION_COLS} rows={rotationRows} />
