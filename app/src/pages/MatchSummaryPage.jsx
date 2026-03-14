@@ -18,7 +18,7 @@ import { RotationRadarChart } from '../components/charts/RotationRadarChart';
 import { CourtHeatMap } from '../components/charts/CourtHeatMap';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, RadialBarChart, RadialBar, Legend,
+  ResponsiveContainer, Cell,
 } from 'recharts';
 
 const TABS = [
@@ -307,6 +307,158 @@ function RotationBarChart({ rotationRows }) {
   );
 }
 
+// ── Rally Length Histogram ───────────────────────────────────────────────────
+
+const RALLY_BUCKETS = [
+  { label: '1',    min: 1, max: 1  },
+  { label: '2–3',  min: 2, max: 3  },
+  { label: '4–6',  min: 4, max: 6  },
+  { label: '7–10', min: 7, max: 10 },
+  { label: '11+',  min: 11, max: Infinity },
+];
+
+function computeRallyHistogram(contacts) {
+  if (!contacts?.length) return [];
+  const lenByRally = new Map();
+  for (const c of contacts) {
+    if (!c.rally_id) continue;
+    lenByRally.set(c.rally_id, (lenByRally.get(c.rally_id) ?? 0) + 1);
+  }
+  const counts = RALLY_BUCKETS.map(b => ({ name: b.label, rallies: 0 }));
+  for (const len of lenByRally.values()) {
+    const idx = RALLY_BUCKETS.findIndex(b => len >= b.min && len <= b.max);
+    if (idx >= 0) counts[idx].rallies++;
+  }
+  const total = counts.reduce((s, c) => s + c.rallies, 0);
+  return counts.map(c => ({ ...c, pct: total ? Math.round(c.rallies / total * 100) : 0 }));
+}
+
+function RallyHistogram({ contacts }) {
+  const data = useMemo(() => computeRallyHistogram(contacts), [contacts]);
+  const total = data.reduce((s, d) => s + d.rallies, 0);
+
+  if (!total) return <p className="text-slate-500 text-sm text-center py-6">No rally data yet.</p>;
+
+  const BAR_COLORS = ['#f97316', '#fb923c', '#fbbf24', '#4ade80', '#60a5fa'];
+
+  return (
+    <div>
+      <div className="text-xs text-slate-400 font-medium mb-2 uppercase tracking-wider">
+        Rally Length Distribution · {total} rallies
+      </div>
+      <ResponsiveContainer width="100%" height={180}>
+        <BarChart data={data} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+          <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+          <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} allowDecimals={false} />
+          <Tooltip
+            contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+            labelStyle={{ color: '#cbd5e1' }}
+            formatter={(v, _name, props) => [`${v} rallies (${props.payload.pct}%)`, 'Count']}
+          />
+          <Bar dataKey="rallies" radius={[4, 4, 0, 0]}>
+            {data.map((_, i) => (
+              <Cell key={`cell-${i}`} fill={BAR_COLORS[i % BAR_COLORS.length]} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+      {/* Quick stat row */}
+      <div className="grid grid-cols-2 gap-2 mt-2 text-center">
+        <div className="bg-surface rounded-lg p-2">
+          <div className="text-xs text-slate-400">Quick Points (1-hit)</div>
+          <div className="font-bold text-primary">{data[0]?.pct ?? 0}%</div>
+        </div>
+        <div className="bg-surface rounded-lg p-2">
+          <div className="text-xs text-slate-400">Long Rallies (7+)</div>
+          <div className="font-bold text-sky-400">{((data[3]?.pct ?? 0) + (data[4]?.pct ?? 0))}%</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Share Card ───────────────────────────────────────────────────────────────
+
+const ShareCard = ({ cardRef, match, sets, stats, fmtDate }) => {
+  if (!match || !stats) return null;
+  const won = (match.our_sets_won ?? 0) > (match.opp_sets_won ?? 0);
+  const completedSets = (sets ?? []).filter(s => s.status === 'complete');
+
+  return (
+    <div
+      ref={cardRef}
+      style={{
+        position: 'absolute', left: '-9999px', top: 0,
+        width: 380, background: '#0f172a', borderRadius: 16,
+        padding: '20px 24px', fontFamily: 'system-ui, -apple-system, sans-serif',
+        color: 'white', overflow: 'hidden',
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: '#f97316', textTransform: 'uppercase', marginBottom: 2 }}>
+            VBSTAT · Match Result
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.1 }}>
+            vs. {match.opponent_name ?? 'Opponent'}
+          </div>
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+            {fmtDate(match.date)}{match.location ? ` · ${match.location}` : ''}
+          </div>
+        </div>
+        <div style={{
+          fontSize: 32, fontWeight: 900, letterSpacing: '-0.02em',
+          color: won ? '#4ade80' : '#f87171', lineHeight: 1,
+        }}>
+          {won ? 'W' : 'L'} {match.our_sets_won ?? 0}–{match.opp_sets_won ?? 0}
+        </div>
+      </div>
+
+      {/* Set score chips */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+        {completedSets.map(s => {
+          const sw = s.our_score > s.opp_score;
+          return (
+            <div key={s.id} style={{
+              background: sw ? 'rgba(52,211,153,0.15)' : 'rgba(248,113,113,0.15)',
+              border: `1px solid ${sw ? 'rgba(52,211,153,0.4)' : 'rgba(248,113,113,0.4)'}`,
+              borderRadius: 8, padding: '3px 10px', fontSize: 13,
+            }}>
+              <span style={{ color: sw ? '#4ade80' : '#f87171', fontWeight: 700, marginRight: 4, fontSize: 10 }}>S{s.set_number}</span>
+              <span style={{ fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{s.our_score}–{s.opp_score}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Divider */}
+      <div style={{ borderTop: '1px solid #334155', marginBottom: 14 }} />
+
+      {/* Key stats row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, textAlign: 'center' }}>
+        {[
+          { label: 'HIT%',  val: fmtHitting(stats.team.hit_pct) },
+          { label: 'ACE%',  val: fmtPct(stats.team.ace_pct)     },
+          { label: 'APR',   val: fmtPassRating(stats.team.apr)  },
+          { label: 'SO%',   val: fmtPct(stats.rotation.so_pct)  },
+        ].map(({ label, val }) => (
+          <div key={label} style={{ background: '#1e293b', borderRadius: 8, padding: '8px 4px' }}>
+            <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 3 }}>{label}</div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: '#f97316' }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer */}
+      <div style={{ marginTop: 14, fontSize: 10, color: '#475569', textAlign: 'right' }}>
+        Tracked with VBSTAT by SHUA
+      </div>
+    </div>
+  );
+};
+
 const SERVING_COLS = {
   all: [
     { key: 'name',    label: 'Player' },
@@ -391,6 +543,8 @@ export function MatchSummaryPage() {
   const [stats, setStats] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [sharingCard, setSharingCard] = useState(false);
+  const shareCardRef = useRef(null);
 
   // Match + sets from Dexie (live)
   const match = useLiveQuery(() => db.matches.get(id), [id]);
@@ -466,6 +620,34 @@ export function MatchSummaryPage() {
     exportMaxPrepsCSV(stats.players, playerNames, playerJerseys, stats.setsPlayed, `match-${id}-maxpreps.txt`);
   }
 
+  async function handleShareCard() {
+    if (!shareCardRef.current || !stats || !match) return;
+    setSharingCard(true);
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const canvas = await html2canvas(shareCardRef.current, {
+        backgroundColor: '#0f172a',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const filename = `vbstat-vs-${(match.opponent_name ?? 'opponent').replace(/\s+/g, '-').toLowerCase()}.png`;
+        if (navigator.share && navigator.canShare?.({ files: [new File([blob], filename, { type: 'image/png' })] })) {
+          await navigator.share({ files: [new File([blob], filename, { type: 'image/png' })], title: 'Match Result' });
+        } else {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = filename; a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+      }, 'image/png');
+    } finally {
+      setSharingCard(false);
+    }
+  }
+
   return (
     <div>
       <PageHeader title="Match Summary" backTo="/" />
@@ -519,15 +701,18 @@ export function MatchSummaryPage() {
             <MatchNotes matchId={id} initialNotes={match.notes ?? ''} />
 
             {/* Export bar */}
-            <div className="flex gap-2 mt-3">
+            <div className="flex gap-2 mt-3 flex-wrap">
               <Button size="sm" variant="secondary" disabled={!stats} onClick={handlePDF}>
-                Download PDF
+                PDF
               </Button>
               <Button size="sm" variant="secondary" disabled={!stats} onClick={handleCSV}>
-                Download CSV
+                CSV
               </Button>
               <Button size="sm" variant="secondary" disabled={!stats} onClick={handleMaxPreps}>
                 MaxPreps
+              </Button>
+              <Button size="sm" variant="secondary" disabled={!stats || sharingCard} onClick={handleShareCard}>
+                {sharingCard ? '…' : '📸 Share Card'}
               </Button>
             </div>
           </div>
@@ -559,7 +744,12 @@ export function MatchSummaryPage() {
             )}
 
             {tab === 'trends' && (
-              <SetTrendsChart contacts={contacts} sets={sets ?? []} />
+              <div className="space-y-8">
+                <SetTrendsChart contacts={contacts} sets={sets ?? []} />
+                <div className="border-t border-slate-700/50 pt-6">
+                  <RallyHistogram contacts={contacts} />
+                </div>
+              </div>
             )}
 
             {tab === 'compare' && (
@@ -626,6 +816,15 @@ export function MatchSummaryPage() {
       {!loading && !match && (
         <div className="p-4 text-slate-400">Match not found.</div>
       )}
+
+      {/* Off-screen share card — rendered for html2canvas capture */}
+      <ShareCard
+        cardRef={shareCardRef}
+        match={match}
+        sets={sets}
+        stats={stats}
+        fmtDate={fmtDate}
+      />
     </div>
   );
 }

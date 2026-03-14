@@ -646,6 +646,32 @@
   transform-origin: center bottom;
 }
 
+/* ── Ace serve — flat, fast, laser trajectory ── */
+@keyframes ace-serve-arc {
+  0%   { transform: translate(-80px, 0px);  opacity: 0; }
+  4%   { transform: translate(-65px, 0px);  opacity: 1; }
+  45%  { transform: translate(90px,  6px);  opacity: 1; }
+  85%  { transform: translate(260px, 12px); opacity: 1; }
+  100% { transform: translate(290px, 12px); opacity: 0; }
+}
+.animate-ace-serve {
+  animation: ace-serve-arc 1.3s cubic-bezier(0.25, 0.0, 0.65, 1.0) forwards;
+}
+
+/* ── Free ball — slow, high, loopy arc ── */
+@keyframes freeball-arc {
+  0%   { transform: translate(-55px,  45px); opacity: 0; }
+  8%   { transform: translate(-35px,  20px); opacity: 1; }
+  30%  { transform: translate( 55px, -65px); opacity: 1; }
+  55%  { transform: translate(155px, -72px); opacity: 1; }
+  78%  { transform: translate(250px, -30px); opacity: 1; }
+  95%  { transform: translate(308px,  32px); opacity: 1; }
+  100% { transform: translate(320px,  35px); opacity: 0; }
+}
+.animate-freeball-arc {
+  animation: freeball-arc 2.5s cubic-bezier(0.22, 0.61, 0.36, 1.0) forwards;
+}
+
 /* ── Kill / Ace burst particles ── */
 @keyframes kill-burst-dot {
   0%   { transform: translate(0, 0) scale(1);   opacity: 1; }

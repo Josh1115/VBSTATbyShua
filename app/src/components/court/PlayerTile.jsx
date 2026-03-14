@@ -202,6 +202,16 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
       {isDimmed && (
         <div className="absolute inset-0 bg-slate-900/55 pointer-events-none z-10 first-contact-overlay" />
       )}
+      {/* Jersey number watermark — large faint number in tile background */}
+      {slot.jersey != null && (
+        <span
+          className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden"
+          aria-hidden="true"
+          style={{ fontSize: '22vmin', fontWeight: 900, color: numberColor, opacity: 0.038, lineHeight: 1 }}
+        >
+          {slot.jersey}
+        </span>
+      )}
       {/* Libero "L" badge — top-left corner pill */}
       {isLibero && (
         <div className="absolute top-0.5 left-0.5 z-20 flex items-center justify-center rounded-full bg-emerald-500"

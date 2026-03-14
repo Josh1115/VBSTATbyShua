@@ -80,16 +80,23 @@ export function HomePage() {
 
   const [ballKey, setBallKey] = useState(0);
   const [showBall, setShowBall] = useState(false);
-  const [isFloater, setIsFloater] = useState(false);
+  const [ballType, setBallType] = useState('spike'); // 'spike' | 'floater' | 'ace' | 'freeball'
   const [netRippling, setNetRippling] = useState(false);
+
+  const BALL_TYPES = [
+    { type: 'spike',    cls: 'animate-spike-drop',   dur: 1700 },
+    { type: 'floater',  cls: 'animate-floater-arc',  dur: 1900 },
+    { type: 'ace',      cls: 'animate-ace-serve',    dur: 1400 },
+    { type: 'freeball', cls: 'animate-freeball-arc', dur: 2600 },
+  ];
 
   useEffect(() => {
     const trigger = () => {
-      const floater = Math.random() < 1 / 3;
-      setIsFloater(floater);
+      const pick = BALL_TYPES[Math.floor(Math.random() * BALL_TYPES.length)];
+      setBallType(pick.type);
       setBallKey((k) => k + 1);
       setShowBall(true);
-      setTimeout(() => setShowBall(false), floater ? 1900 : 1700);
+      setTimeout(() => setShowBall(false), pick.dur);
     };
     const first = setTimeout(trigger, 2500);
     const interval = setInterval(trigger, 15000);
@@ -155,7 +162,7 @@ export function HomePage() {
         <div className="absolute inset-0 crt-scanlines pointer-events-none overflow-hidden" aria-hidden="true" />
         {showBall && (
           <div key={ballKey} className="absolute inset-x-0 top-0 flex justify-center pointer-events-none z-10" aria-hidden="true">
-            <span className={`text-3xl inline-block ${isFloater ? 'animate-floater-arc' : 'animate-spike-drop'}`}>🏐</span>
+            <span className={`text-3xl inline-block ${BALL_TYPES.find(b => b.type === ballType)?.cls ?? 'animate-spike-drop'}`}>🏐</span>
           </div>
         )}
         <h1 className="tracking-wide flex items-baseline justify-center gap-3">
@@ -168,11 +175,11 @@ export function HomePage() {
               color: '#f97316',
             }}
             onClick={() => {
-              const floater = Math.random() < 1 / 3;
-              setIsFloater(floater);
+              const pick = BALL_TYPES[Math.floor(Math.random() * BALL_TYPES.length)];
+              setBallType(pick.type);
               setBallKey((k) => k + 1);
               setShowBall(true);
-              setTimeout(() => setShowBall(false), floater ? 1900 : 1700);
+              setTimeout(() => setShowBall(false), pick.dur);
               setNetRippling(true);
               setTimeout(() => setNetRippling(false), 450);
             }}
