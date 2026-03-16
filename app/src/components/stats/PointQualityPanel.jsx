@@ -1,3 +1,72 @@
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+
+const SLICE_COLORS = {
+  Earned: '#22c55e',
+  Free:   '#38bdf8',
+  Given:  '#f87171',
+};
+
+function PointsPieChart({ earned, free, given }) {
+  const total = earned + free + given;
+  if (total === 0) return null;
+
+  const data = [
+    { name: 'Earned', value: earned },
+    { name: 'Free',   value: free   },
+    { name: 'Given',  value: given  },
+  ].filter((d) => d.value > 0);
+
+  const pct = (v) => `${Math.round((v / total) * 100)}%`;
+
+  const renderLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, name, value }) => {
+    const RADIAN = Math.PI / 180;
+    const r = innerRadius + (outerRadius - innerRadius) * 0.55;
+    const x = cx + r * Math.cos(-midAngle * RADIAN);
+    const y = cy + r * Math.sin(-midAngle * RADIAN);
+    if (value / total < 0.07) return null;
+    return (
+      <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight="bold" fill="#fff">
+        {pct(value)}
+      </text>
+    );
+  };
+
+  return (
+    <div className="bg-surface rounded-xl p-3">
+      <div className="text-xs text-slate-400 mb-2 uppercase tracking-wide text-center">Point Distribution</div>
+      <ResponsiveContainer width="100%" height={140}>
+        <PieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            outerRadius={62}
+            dataKey="value"
+            labelLine={false}
+            label={renderLabel}
+          >
+            {data.map((entry) => (
+              <Cell key={entry.name} fill={SLICE_COLORS[entry.name]} />
+            ))}
+          </Pie>
+          <Tooltip
+            contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
+            formatter={(value, name) => [`${value} (${pct(value)})`, name]}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="flex justify-center gap-4 mt-1">
+        {data.map((entry) => (
+          <div key={entry.name} className="flex items-center gap-1.5">
+            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: SLICE_COLORS[entry.name] }} />
+            <span className="text-[11px] text-slate-400">{entry.name} <span className="font-bold text-slate-200">{entry.value}</span></span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Section({ title, total, color, items }) {
   return (
     <div className={`rounded-xl p-3 ${color}`}>
@@ -38,6 +107,12 @@ export function PointQualityPanel({ pq }) {
           </div>
         )}
       </div>
+
+      <PointsPieChart
+        earned={pq.earned.total}
+        free={pq.free.total}
+        given={pq.given.total}
+      />
 
       <Section
         title="Earned — we scored"

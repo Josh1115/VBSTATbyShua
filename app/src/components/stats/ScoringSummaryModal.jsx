@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/schema';
 import { useMatchStore } from '../../store/matchStore';
@@ -257,8 +257,6 @@ function BookkeeperView({ rallies, contacts }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ScoringSummaryModal({ onClose }) {
-  const [tab, setTab] = useState('scoring');
-
   const currentSetId = useMatchStore((s) => s.currentSetId);
   const setNumber    = useMatchStore((s) => s.setNumber);
   const teamName     = useMatchStore((s) => s.teamName);
@@ -326,19 +324,7 @@ export function ScoringSummaryModal({ onClose }) {
       {/* Header */}
       <div className="flex-none flex items-center justify-between px-3 py-2 border-b border-slate-700 bg-slate-800">
         <div className="flex items-center gap-1">
-          {[['scoring', 'SCORING'], ['bookkeeper', 'BOOKKEEPER']].map(([key, label]) => (
-            <button
-              key={key}
-              onPointerDown={(e) => { e.preventDefault(); setTab(key); }}
-              className={`px-3 py-1.5 rounded text-xs font-black tracking-wide transition-colors
-                ${tab === key
-                  ? 'bg-primary text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700'
-                }`}
-            >
-              {label}
-            </button>
-          ))}
+          <span className="text-slate-300 text-xs font-black tracking-wide px-3 py-1.5">SCORING</span>
           <span className="text-slate-600 text-xs ml-1">· Set {setNumber}</span>
         </div>
         <button
@@ -349,10 +335,9 @@ export function ScoringSummaryModal({ onClose }) {
         </button>
       </div>
 
-      {/* ── SCORING SUMMARY tab ── */}
-      {tab === 'scoring' && (
-        <>
-          {/* Column headers */}
+      {/* ── SCORING SUMMARY ── */}
+      <>
+        {/* Column headers */}
           <div className="flex-none grid grid-cols-[2.5rem_1fr_5rem_1fr] border-b border-slate-700 bg-slate-800/60 px-3 py-1.5">
             <span className="text-[1.3vmin] font-bold text-slate-500 uppercase">#</span>
             <span className="text-[1.3vmin] font-bold text-emerald-500 uppercase">{usLabel}</span>
@@ -425,29 +410,8 @@ export function ScoringSummaryModal({ onClose }) {
               </div>
             );
           })()}
-        </>
-      )}
+      </>
 
-      {/* ── BOOKKEEPER tab ── */}
-      {tab === 'bookkeeper' && (
-        <>
-          {/* Legend */}
-          <div className="flex-none flex items-center gap-4 px-3 py-1.5 border-b border-slate-800 bg-slate-800/40">
-            <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm bg-primary/85" />
-              <span className="text-[1.0vmin] text-slate-400 font-semibold">On serve</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-sm bg-sky-700/70" />
-              <span className="text-[1.0vmin] text-slate-400 font-semibold">Side-out</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[1.0vmin] text-slate-400 font-semibold">#jersey = server · ◂ = side-out win</span>
-            </div>
-          </div>
-          <BookkeeperView rallies={rallies} contacts={contacts} />
-        </>
-      )}
     </div>
   );
 }

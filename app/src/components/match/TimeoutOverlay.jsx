@@ -118,7 +118,7 @@ export function TimeoutOverlay({ onClose, recordAlerts = [], scoreAtLastTimeout 
           const n = (v) => v ?? 0;
           const pct = (v) => v != null ? Math.round(v * 100) + '%' : '—';
           const dec1 = (v) => v != null ? v.toFixed(1) : '—';
-          const hitPct = (v) => v != null ? (v >= 0 ? '+' : '') + (v * 1000).toFixed(0) : '—';
+          const hitPct = fmtHitting;
           const groups = [
             { label: 'SERVING',   items: [`${n(t.sa)} SA`, `${n(t.ace)} ACE`, `${n(t.se)} SE`, `${pct(t.si_pct)} SIP`] },
             { label: 'ATTACKING', items: [`${n(t.ta)} TA`, `${n(t.k)} K`, `${n(t.ae)} AE`, `${hitPct(t.hit_pct)} HIT`] },

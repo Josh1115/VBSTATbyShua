@@ -170,6 +170,51 @@ function KillBurst({ x, y }) {
   );
 }
 
+// K-button firework — orange/gold dot particles radiate from the K button area
+const FIREWORK_COLORS = ['#f97316', '#fb923c', '#fbbf24', '#ef4444', '#fde047', '#f59e0b', '#fdba74', '#fca5a5'];
+function KillFirework({ x, y }) {
+  const count = 12;
+  return (
+    <div className="fixed pointer-events-none z-[999]" style={{ left: x, top: y }}>
+      {Array.from({ length: count }, (_, i) => {
+        const angle = (i / count) * Math.PI * 2;
+        const dist  = 22 + (i % 4) * 12;
+        const size  = 4 + (i % 3);
+        return (
+          <div
+            key={i}
+            className="kill-burst-dot"
+            style={{
+              '--dx': `${Math.cos(angle) * dist}px`,
+              '--dy': `${Math.sin(angle) * dist}px`,
+              background: FIREWORK_COLORS[i % FIREWORK_COLORS.length],
+              width: size, height: size,
+              marginLeft: -size / 2, marginTop: -size / 2,
+              animationDelay: `${i * 20}ms`,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+// "KILL" badge — rises from K button like DIME does for a perfect pass
+function KillBadge({ x, y }) {
+  return (
+    <div className="kill-badge-pop fixed pointer-events-none z-[998]" style={{ left: x, top: y }}>
+      <div style={{
+        position: 'absolute', left: '-16px', top: '-8px',
+        background: '#c2410c', color: '#fff',
+        fontWeight: 900, fontSize: '13px',
+        padding: '2px 7px', borderRadius: '5px',
+        boxShadow: '0 0 10px rgba(234,88,12,0.65)',
+        whiteSpace: 'nowrap', letterSpacing: '0.06em',
+      }}>KILL</div>
+    </div>
+  );
+}
+
 // Ace celebration — gold ring pulse + "ACE" text zoom-fade + volleyball scatter
 function AceCelebration({ x, y }) {
   return (
@@ -258,6 +303,9 @@ export const CourtGrid = memo(function CourtGrid() {
   const [ballArc,           setBallArc]           = useState(null); // { key, x, y } | null
   // #4 Kill burst (volleyball emojis)
   const [killBurst,         setKillBurst]         = useState(null); // { key, x, y } | null
+  // Kill firework (colored dots from K button area) + rising KILL badge
+  const [killFirework,      setKillFirework]      = useState(null); // { key, x, y } | null
+  const [killBadge,         setKillBadge]         = useState(null); // { key, x, y } | null
   // Ace celebration (ring + text)
   const [aceCeleb,          setAceCeleb]          = useState(null); // { key, x, y } | null
   // Block hands
@@ -303,8 +351,14 @@ export const CourtGrid = memo(function CourtGrid() {
         setBallArc({ key, x, y });
         if (isKill) {
           setKillBurst({ key, x, y });
+          // K button is ~60% down the tile; firework + badge originate from there
+          const kBtnY = r.top + r.height * 0.60;
+          setKillFirework({ key, x, y: kBtnY });
+          setKillBadge({ key, x, y: kBtnY });
           clearTimeout(arcTimerRef.current);
-          arcTimerRef.current = setTimeout(() => { setBallArc(null); setKillBurst(null); }, 780);
+          arcTimerRef.current = setTimeout(() => {
+            setBallArc(null); setKillBurst(null); setKillFirework(null); setKillBadge(null);
+          }, 920);
         }
         if (isAce) {
           clearTimeout(aceTimerRef.current);
@@ -559,6 +613,16 @@ export const CourtGrid = memo(function CourtGrid() {
       {/* #4 Kill burst — volleyball emojis scatter */}
       {killBurst && (
         <KillBurst key={killBurst.key} x={killBurst.x} y={killBurst.y} />
+      )}
+
+      {/* Kill firework — colored dots from K button area */}
+      {killFirework && (
+        <KillFirework key={killFirework.key} x={killFirework.x} y={killFirework.y} />
+      )}
+
+      {/* Kill badge — "KILL" rises from K button like DIME */}
+      {killBadge && (
+        <KillBadge key={killBadge.key} x={killBadge.x} y={killBadge.y} />
       )}
 
       {/* Ace celebration — gold ring + ACE text */}

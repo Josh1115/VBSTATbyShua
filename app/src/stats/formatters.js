@@ -1,9 +1,9 @@
 // Null-safe wrapper — returns '—' when val is null/undefined
 export const fmt = (val, fn) => val == null ? '—' : fn(val);
 
-// +.312 / -.045  (hitting%)
+// +0.312 / -0.045  (hitting%)
 export const fmtHitting = (val) =>
-  fmt(val, v => (v < 0 ? '-' : '+') + Math.abs(v).toFixed(3).replace(/^0\./, '.'));
+  fmt(val, v => (v < 0 ? '-' : '+') + Math.abs(v).toFixed(3));
 
 // 2.34  (pass avg)
 export const fmtPassRating = (val) => fmt(val, v => v.toFixed(2));

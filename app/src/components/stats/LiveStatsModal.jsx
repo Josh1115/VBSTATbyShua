@@ -193,7 +193,7 @@ function TeamStatsTable({ t, opp }) {
 // ── Rotation Analysis Table ───────────────────────────────────────────────────
 const pct   = (v) => v != null ? Math.round(v * 100) + '%' : '—';
 const dec1  = (v) => v != null ? v.toFixed(1) : '—';
-const hitFmt = (v) => v != null ? (v >= 0 ? '+' : '') + (v * 1000).toFixed(0) : '—';
+const hitFmt = fmtHitting;
 const n     = (v) => v ?? 0;
 
 function RotationTable({ rotPts, rotContacts }) {
@@ -266,7 +266,7 @@ function ISvsOOSTable({ data, freeDigData, transAtkData }) {
   const ROTATIONS = [1, 2, 3, 4, 5, 6];
   const pctFmt = (won, pa) => pa > 0 ? Math.round(won / pa * 100) + '%' : '—';
   const cntFmt = (v) => v > 0 ? v : '—';
-  const effFmt = (v) => v != null ? (v >= 0 ? '+' : '') + (v * 1000).toFixed(0) : '—';
+  const effFmt = fmtHitting;
 
   const rows = [
     {
@@ -524,9 +524,7 @@ function OffenseBalanceChart({ setPlayerStats, matchPlayerStats, positionMap }) 
             <tbody>
               {groups.map((g) => {
                 const cfg = POS_CFG[g.pos] ?? POS_CFG.Other;
-                const hitStr = g.hit_pct != null
-                  ? (g.hit_pct >= 0 ? '+' : '') + (g.hit_pct * 1000).toFixed(0)
-                  : '—';
+                const hitStr = fmtHitting(g.hit_pct);
                 const kPct = g.ta > 0 ? Math.round(g.k / g.ta * 100) + '%' : '—';
                 return (
                   <tr key={g.pos} className="border-b border-slate-800/50">

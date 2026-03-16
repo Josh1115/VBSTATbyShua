@@ -337,15 +337,15 @@ describe('computeFreeballOutcomes', () => {
 describe('formatters', () => {
   describe('fmtHitting', () => {
     it('formats positive value with + sign and 3 decimal places', () => {
-      expect(fmtHitting(0.312)).toBe('+.312');
+      expect(fmtHitting(0.312)).toBe('+0.312');
     });
 
     it('formats negative value with - sign', () => {
-      expect(fmtHitting(-0.045)).toBe('-.045');
+      expect(fmtHitting(-0.045)).toBe('-0.045');
     });
 
-    it('formats zero as +.000', () => {
-      expect(fmtHitting(0)).toBe('+.000');
+    it('formats zero as +0.000', () => {
+      expect(fmtHitting(0)).toBe('+0.000');
     });
 
     it('returns — for null', () => {

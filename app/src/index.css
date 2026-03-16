@@ -783,6 +783,18 @@
   pointer-events: none;
 }
 
+/* ── Kill badge — "KILL" rises like DIME ── */
+@keyframes kill-badge-pop {
+  0%   { transform: scale(0.5) translateY(0px);    opacity: 0; }
+  28%  { transform: scale(1.2) translateY(-14px);  opacity: 1; }
+  68%  { transform: scale(1.0) translateY(-24px);  opacity: 1; }
+  100% { transform: scale(0.85) translateY(-36px); opacity: 0; }
+}
+.kill-badge-pop {
+  animation: kill-badge-pop 860ms ease-out forwards;
+  pointer-events: none;
+}
+
 /* ── Perfect pass 3! pop badge ── */
 @keyframes perfect-pass-pop {
   0%   { transform: scale(0.5) translateY(0px);   opacity: 0; }
