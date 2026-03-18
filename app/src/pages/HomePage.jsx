@@ -61,7 +61,7 @@ function SetPips({ ourSets, oppSets }) {
 export function HomePage() {
   const navigate = useNavigate();
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [matchView, setMatchView] = useState('recent');
+  const [matchView, setMatchView] = useState(() => localStorage.getItem('vbstat_match_view_default') ?? 'recent');
   const [scoreDetail] = useState(() => localStorage.getItem('vbstat_score_detail') ?? 'sets');
 
   const todayDisplay = useMemo(() => {

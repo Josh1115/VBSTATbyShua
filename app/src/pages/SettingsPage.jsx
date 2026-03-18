@@ -114,6 +114,12 @@ function useScoreDetail() {
   return [val, save];
 }
 
+function useMatchViewDefault() {
+  const [val, setVal] = useState(() => localStorage.getItem('vbstat_match_view_default') ?? 'recent');
+  const save = (v) => { localStorage.setItem('vbstat_match_view_default', v); setVal(v); };
+  return [val, save];
+}
+
 function useDefaultTeam() {
   const [defaultTeamId, setDefaultTeamId] = useState(() => {
     const saved = parseInt(localStorage.getItem('vbstat_default_team_id'), 10);
@@ -138,6 +144,7 @@ export function SettingsPage() {
   const [coachName,     saveCoachName]     = useCoachName();
   const [defaultTeamId,    saveDefaultTeam]    = useDefaultTeam();
   const [scoreDetail,      saveScoreDetail]    = useScoreDetail();
+  const [matchViewDefault, saveMatchViewDefault] = useMatchViewDefault();
   const [playerNameFormat, savePlayerNameFormat] = usePlayerNameFormat();
   const teams = useLiveQuery(() => db.teams.orderBy('name').toArray(), []);
   const [wakeLock,    saveWakeLock]    = useToggleSetting('vbstat_wake_lock');
@@ -307,6 +314,31 @@ export function SettingsPage() {
                   >
                     <span>{label}</span>
                     <span className={`text-[10px] font-normal font-mono ${scoreDetail === val ? 'text-orange-100/70' : 'text-slate-500'}`}>{example}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Default match view */}
+            <div>
+              <div className="text-sm font-medium mb-0.5">Home Screen Match List</div>
+              <div className="text-xs text-slate-400 mb-2">Default view when opening the app</div>
+              <div className="flex gap-2">
+                {[
+                  { val: 'recent',  label: 'Recent',  example: 'newest first' },
+                  { val: 'closest', label: 'Closest', example: 'near today'   },
+                ].map(({ val, label, example }) => (
+                  <button
+                    key={val}
+                    onClick={() => saveMatchViewDefault(val)}
+                    className={`flex-1 py-2 px-2 rounded-lg text-sm font-semibold border transition-colors flex flex-col items-center gap-0.5 ${
+                      matchViewDefault === val
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-bg text-slate-300 border-slate-600 hover:border-slate-400'
+                    }`}
+                  >
+                    <span>{label}</span>
+                    <span className={`text-[10px] font-normal ${matchViewDefault === val ? 'text-orange-100/70' : 'text-slate-500'}`}>{example}</span>
                   </button>
                 ))}
               </div>
