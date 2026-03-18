@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { useMatchStore } from '../store/matchStore';
-import { useUiStore } from '../store/uiStore';
 import { computePlayerStats, computeTeamStats } from '../stats/engine';
 import { SET_STATUS, FORMAT, SIDE, MATCH_STATUS } from '../constants';
 import { useMatchStats } from '../hooks/useMatchStats';
