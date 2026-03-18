@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { useMatchStore } from '../store/matchStore';
+import { useUiStore, selectServeZonePending, selectClearServeZonePicker } from '../store/uiStore';
 import { computePlayerStats, computeTeamStats } from '../stats/engine';
 import { SET_STATUS, FORMAT, SIDE } from '../constants';
 import { useMatchStats } from '../hooks/useMatchStats';
@@ -23,6 +24,114 @@ import { OppScoringColumn } from '../components/match/OppScoringColumn';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Confetti } from '../components/ui/Confetti';
 import { SetSummaryModal } from '../components/match/SetSummaryModal';
+
+// Compute zone 1-6 from normalized tap coords on opponent's court
+// Server's POV: net at top (y=0), back line at bottom (y=1), left=zones 4/5, right=zones 2/1
+// Attack line at y=1/3 (3m of 9m half-court depth)
+function computeLandZone(x, y) {
+  const col = x < 1 / 3 ? 0 : x < 2 / 3 ? 1 : 2;
+  return y < 1 / 3 ? [4, 3, 2][col] : [5, 6, 1][col];
+}
+
+function ServeZonePicker({ contactId, onClose }) {
+  const [reticle, setReticle] = useState(null); // null | { x, y } in SVG user units (0–100)
+  const courtRef    = useRef(null);
+  const closeTimer  = useRef(null);
+
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
+
+  const handleCourtTap = async (e) => {
+    e.preventDefault();
+    if (reticle) return; // already tapped, waiting to close
+    const rect = courtRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left)  / rect.width));
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top)   / rect.height));
+    setReticle({ x: x * 100, y: y * 100 });
+    await db.contacts.update(contactId, { land_zone: computeLandZone(x, y), land_x: x, land_y: y });
+    closeTimer.current = setTimeout(onClose, 560);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/65" />
+      <div
+        className="relative z-10 rounded-xl overflow-hidden shadow-2xl border border-slate-600 serve-court-in"
+        style={{ width: 'min(35vw, 380px)' }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-700">
+          <span className="text-[1.5vmin] font-bold text-orange-300 uppercase tracking-widest">Tap landing spot</span>
+          <button
+            onPointerDown={(e) => { e.preventDefault(); onClose(); }}
+            className="text-slate-500 hover:text-slate-200 text-[1.8vmin] font-bold leading-none px-1 select-none"
+          >✕</button>
+        </div>
+
+        {/* Court diagram — square aspect, opponent's half, net at top */}
+        <div
+          ref={courtRef}
+          className="relative w-full select-none"
+          style={{ aspectRatio: '1', cursor: 'crosshair' }}
+          onPointerDown={handleCourtTap}
+        >
+          <svg
+            className="absolute inset-0 w-full h-full"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            {/* Court base */}
+            <rect width="100" height="100" fill="#0c243d" />
+
+            {/* Alternating zone fills */}
+            <rect x="0"     y="0"     width="33.33" height="33.33" fill="#091e33" />
+            <rect x="33.33" y="0"     width="33.34" height="33.33" fill="#0e2b47" />
+            <rect x="66.67" y="0"     width="33.33" height="33.33" fill="#091e33" />
+            <rect x="0"     y="33.33" width="33.33" height="66.67" fill="#0e2b47" />
+            <rect x="33.33" y="33.33" width="33.34" height="66.67" fill="#091e33" />
+            <rect x="66.67" y="33.33" width="33.33" height="66.67" fill="#0e2b47" />
+
+            {/* Column dividers */}
+            <line x1="33.33" y1="0" x2="33.33" y2="100" stroke="#2e4f6a" strokeWidth="0.6" />
+            <line x1="66.67" y1="0" x2="66.67" y2="100" stroke="#2e4f6a" strokeWidth="0.6" />
+
+            {/* Attack line — orange dashed */}
+            <line x1="0" y1="33.33" x2="100" y2="33.33" stroke="#f97316" strokeWidth="0.9" strokeDasharray="4,2.5" opacity="0.75" />
+
+            {/* Court border */}
+            <rect x="0.4" y="0.4" width="99.2" height="99.2" fill="none" stroke="#3a6080" strokeWidth="0.8" />
+
+            {/* Zone labels */}
+            <text x="16.67" y="20"   textAnchor="middle" fill="#2e5070" fontSize="9" fontWeight="bold" fontFamily="system-ui,sans-serif">4</text>
+            <text x="50"    y="20"   textAnchor="middle" fill="#2e5070" fontSize="9" fontWeight="bold" fontFamily="system-ui,sans-serif">3</text>
+            <text x="83.33" y="20"   textAnchor="middle" fill="#2e5070" fontSize="9" fontWeight="bold" fontFamily="system-ui,sans-serif">2</text>
+            <text x="16.67" y="64"   textAnchor="middle" fill="#2e5070" fontSize="9" fontWeight="bold" fontFamily="system-ui,sans-serif">5</text>
+            <text x="50"    y="64"   textAnchor="middle" fill="#2e5070" fontSize="9" fontWeight="bold" fontFamily="system-ui,sans-serif">6</text>
+            <text x="83.33" y="64"   textAnchor="middle" fill="#2e5070" fontSize="9" fontWeight="bold" fontFamily="system-ui,sans-serif">1</text>
+
+            {/* Reticle — appears at tap point */}
+            {reticle && (
+              <g>
+                <circle cx={reticle.x} cy={reticle.y} r="7"   fill="rgba(249,115,22,0.18)" stroke="#f97316" strokeWidth="1.4" />
+                <circle cx={reticle.x} cy={reticle.y} r="1.8" fill="#f97316" />
+                <line x1={reticle.x - 12} y1={reticle.y} x2={reticle.x - 8} y2={reticle.y} stroke="#f97316" strokeWidth="1.2" />
+                <line x1={reticle.x + 8}  y1={reticle.y} x2={reticle.x + 12} y2={reticle.y} stroke="#f97316" strokeWidth="1.2" />
+                <line x1={reticle.x} y1={reticle.y - 12} x2={reticle.x} y2={reticle.y - 8} stroke="#f97316" strokeWidth="1.2" />
+                <line x1={reticle.x} y1={reticle.y + 8}  x2={reticle.x} y2={reticle.y + 12} stroke="#f97316" strokeWidth="1.2" />
+              </g>
+            )}
+          </svg>
+
+          {/* NET bar at top */}
+          <div className="absolute top-0 inset-x-0 flex justify-center pointer-events-none z-10">
+            <div className="bg-orange-500/10 border-b border-orange-500/50 px-5 py-[2px]">
+              <span className="text-[1.1vmin] font-black text-orange-400 uppercase tracking-[0.25em]">NET</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function LiveMatchPage() {
   const { matchId: matchIdParam } = useParams();
@@ -47,6 +156,7 @@ export function LiveMatchPage() {
 
   const setMatch            = useMatchStore((s) => s.setMatch);
   const setLineup           = useMatchStore((s) => s.setLineup);
+  const setPlayerNicknames  = useMatchStore((s) => s.setPlayerNicknames);
   const setLibero           = useMatchStore((s) => s.setLibero);
   const swapLibero          = useMatchStore((s) => s.swapLibero);
   const endSet              = useMatchStore((s) => s.endSet);
@@ -64,6 +174,21 @@ export function LiveMatchPage() {
   const setNumber    = useMatchStore((s) => s.setNumber);
   const pointHistory = useMatchStore((s) => s.pointHistory);
   const currentRun   = useMatchStore((s) => s.currentRun);
+  const serveZonePending     = useUiStore(selectServeZonePending);
+  const clearServeZonePicker = useUiStore(selectClearServeZonePicker);
+  const zoneTimerRef = useRef(null);
+
+  // Auto-dismiss zone picker after 4 s
+  useEffect(() => {
+    if (serveZonePending === null) return;
+    zoneTimerRef.current = setTimeout(() => clearServeZonePicker(), 4000);
+    return () => clearTimeout(zoneTimerRef.current);
+  }, [serveZonePending]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const dismissZonePicker = () => {
+    clearTimeout(zoneTimerRef.current);
+    clearServeZonePicker();
+  };
 
   const { playerStats, teamStats } = useMatchStats();
 
@@ -203,6 +328,9 @@ export function LiveMatchPage() {
           }))
           .sort((a, b) => a.position - b.position);
         setLineup(lineup);
+        setPlayerNicknames(
+          Object.fromEntries(players.filter(Boolean).map((p) => [p.id, p.nickname ?? '']))
+        );
       }
 
       // Resolve libero: explicit set designation → full-roster 'L' scan → nothing
@@ -358,6 +486,10 @@ export function LiveMatchPage() {
             }
           }}
         />
+      )}
+
+      {serveZonePending !== null && (
+        <ServeZonePicker contactId={serveZonePending} onClose={dismissZonePicker} />
       )}
 
       {pendingSetWin && (() => {

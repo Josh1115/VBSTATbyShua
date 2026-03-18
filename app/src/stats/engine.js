@@ -1,6 +1,7 @@
 import {
   getContactsForMatch, getRalliesForMatch, getSetsPlayedCount,
   getContactsForMatches, getMatchesForSeason, getRalliesForMatches,
+  getPlayerPositionsForMatches,
 } from './queries';
 
 // ── Internal helpers ────────────────────────────────────────────────────────
@@ -146,6 +147,8 @@ function deriveStats(p, sp, posLabel = null) {
           1.5  * p.bhe
         )
       : null,
+    pos_label: posLabel ?? null,
+    pos_mult:  posMult,
   };
 }
 
@@ -156,14 +159,26 @@ function deriveStats(p, sp, posLabel = null) {
  * Returns { [playerId]: statRow }
  */
 export function computePlayerStats(contacts, setsPlayed = 1, playerPositions = {}) {
-  const accums = {};
+  const accums      = {};
+  const playerSets  = {}; // { [playerId]: Set<setId> }
+  const playerMatches = {}; // { [playerId]: Set<matchId> }
+
   for (const c of contacts) {
     if (!c.player_id || c.opponent_contact) continue;
-    (accums[c.player_id] ??= mkAccum());
-    accumContact(accums[c.player_id], c);
+    const id = c.player_id;
+    (accums[id] ??= mkAccum());
+    accumContact(accums[id], c);
+    (playerSets[id]    ??= new Set()).add(c.set_id);
+    (playerMatches[id] ??= new Set()).add(c.match_id);
   }
+
   return Object.fromEntries(
-    Object.entries(accums).map(([id, acc]) => [id, deriveStats(acc, setsPlayed, playerPositions[id] ?? null)])
+    Object.entries(accums).map(([id, acc]) => {
+      const row = deriveStats(acc, setsPlayed, playerPositions[id] ?? null);
+      row.sp = playerSets[id]?.size    ?? 0;
+      row.mp = playerMatches[id]?.size ?? 0;
+      return [id, row];
+    })
   );
 }
 
@@ -525,13 +540,14 @@ export function computePointQuality(contacts) {
  * Returns { players, team, rotation, freeball, setsPlayed }
  */
 export async function computeMatchStats(matchId) {
-  const [contacts, rallies, setsPlayed] = await Promise.all([
+  const [contacts, rallies, setsPlayed, playerPositions] = await Promise.all([
     getContactsForMatch(matchId),
     getRalliesForMatch(matchId),
     getSetsPlayedCount(matchId),
+    getPlayerPositionsForMatches([matchId]),
   ]);
   return {
-    players:          computePlayerStats(contacts, setsPlayed),
+    players:          computePlayerStats(contacts, setsPlayed, playerPositions),
     team:             computeTeamStats(contacts, setsPlayed),
     rotation:         computeRotationStats(rallies),
     freeball:         computeFreeballOutcomes(contacts, rallies),
@@ -565,15 +581,16 @@ export async function computeSeasonStats(seasonId, filters = {}) {
   if (!matches.length) return { empty: true, totalMatchCount };
 
   const matchIds = matches.map(m => m.id);
-  const [contacts, rallies, perMatchSets] = await Promise.all([
+  const [contacts, rallies, perMatchSets, playerPositions] = await Promise.all([
     getContactsForMatches(matchIds),
     getRalliesForMatches(matchIds),
     Promise.all(matchIds.map(getSetsPlayedCount)),
+    getPlayerPositionsForMatches(matchIds),
   ]);
   const setsPlayed = perMatchSets.reduce((a, b) => a + b, 0);
 
   return {
-    players:          computePlayerStats(contacts, setsPlayed),
+    players:          computePlayerStats(contacts, setsPlayed, playerPositions),
     team:             computeTeamStats(contacts, setsPlayed),
     rotation:         computeRotationStats(rallies),
     freeball:         computeFreeballOutcomes(contacts, rallies),

@@ -1,6 +1,8 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useMatchStore } from '../../store/matchStore';
+import { useUiStore, selectShowServeZonePicker } from '../../store/uiStore';
 import { ACTION, RESULT, SERVE_TYPE, SIDE } from '../../constants';
+import { fmtPlayerName } from '../../stats/formatters';
 
 // Restart a CSS animation on a DOM element without re-rendering
 function flashEl(el, cls = 'btn-flash') {
@@ -71,12 +73,7 @@ const JERSEY_HEX = {
   'gray':  '#94a3b8',
 };
 
-const fmtName = (name) => {
-  if (!name) return '';
-  const parts = name.trim().split(' ');
-  if (parts.length === 1) return parts[0];
-  return `${parts[0][0]}. ${parts[parts.length - 1]}`;
-};
+const getNameFormat = () => localStorage.getItem('vbstat_player_name_format') ?? 'initial_last';
 
 export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, heat, isSubIn = false, isDimmed = false }) {
   const recordContact     = useMatchStore((s) => s.recordContact);
@@ -87,10 +84,13 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const committedContacts = useMatchStore((s) => s.committedContacts);
   const currentSetId      = useMatchStore((s) => s.currentSetId);
   const liberoId            = useMatchStore((s) => s.liberoId);
+  const playerNicknames     = useMatchStore((s) => s.playerNicknames);
   const teamJerseyColor     = useMatchStore((s) => s.teamJerseyColor);
   const liberoJerseyColor   = useMatchStore((s) => s.liberoJerseyColor);
   const rallyCount          = useMatchStore((s) => s.rallyCount);
   const rotationNum         = useMatchStore((s) => s.rotationNum);
+
+  const showServeZonePicker = useUiStore(selectShowServeZonePicker);
 
   const isLibero     = slot?.playerId && slot.playerId === liberoId;
   const jerseyColor  = isLibero ? liberoJerseyColor : teamJerseyColor;
@@ -128,8 +128,9 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
     if (action === ACTION.ATTACK && result === RESULT.KILL)  vibrate(30);
     else if (action === ACTION.SERVE  && result === RESULT.ACE)  vibrate([18, 25, 45]);
     else if (action === ACTION.BLOCK  && result === RESULT.SOLO) vibrate(45);
-    await recordContact({ player_id: slot.playerId, action, result, ...extra });
+    const id = await recordContact({ player_id: slot.playerId, action, result, ...extra });
     await addPoint(SIDE.US);
+    return id;
   };
 
   const tapAndScoreThem = async (action, result, extra = {}) => {
@@ -262,7 +263,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
 
         {/* ── Center: player name ── */}
         <span className={`font-semibold uppercase whitespace-nowrap leading-none text-slate-200${isSubIn ? ' sub-name-enter' : ''}`}>
-          <span style={{ fontSize: '3.15vmin', letterSpacing: '0.06em', fontFamily: 'ui-rounded, system-ui, sans-serif' }}>{fmtName(slot.playerName)}</span>
+          <span style={{ fontSize: '3.15vmin', letterSpacing: '0.06em', fontFamily: 'ui-rounded, system-ui, sans-serif' }}>{fmtPlayerName(slot.playerName, playerNicknames[slot.playerId] ?? '', getNameFormat())}</span>
         </span>
         <div className="absolute right-2 flex items-center gap-1">
           {slot.positionLabel && (
@@ -334,12 +335,12 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
                     onTap={() => setServeType(SERVE_TYPE.TOPSPIN)}
                     cls={serveType === SERVE_TYPE.TOPSPIN ? 'bg-teal-600/80 text-white' : 'bg-violet-900/70 text-violet-400 hover:bg-violet-800/70'} />
                   <Btn key={`att-${!!serveType}`} label="ATT"
-                    onTap={serveType ? () => { tap(ACTION.SERVE, RESULT.IN, { serve_type: serveType }); setServeRecorded(true); } : undefined}
+                    onTap={serveType ? async () => { const id = await tap(ACTION.SERVE, RESULT.IN, { serve_type: serveType }); setServeRecorded(true); showServeZonePicker(id); } : undefined}
                     cls={`${!serveType ? 'bg-slate-800/40 text-slate-700 cursor-not-allowed pointer-events-none'
                       : serveType === SERVE_TYPE.FLOAT ? 'bg-emerald-950/80 text-emerald-300 hover:bg-emerald-900/80'
                       : 'bg-teal-950/80 text-teal-300 hover:bg-teal-900/80'}${serveType ? ' serve-unlock-btn' : ''}`} />
                   <Btn key={`ace-${!!serveType}`} label="ACE"
-                    onTap={serveType ? () => { tapAndScore(ACTION.SERVE, RESULT.ACE, { serve_type: serveType }); setServeRecorded(true); } : undefined}
+                    onTap={serveType ? async () => { const id = await tapAndScore(ACTION.SERVE, RESULT.ACE, { serve_type: serveType }); setServeRecorded(true); showServeZonePicker(id); } : undefined}
                     cls={`${!serveType ? 'bg-slate-800/40 text-slate-700 cursor-not-allowed pointer-events-none'
                       : serveType === SERVE_TYPE.FLOAT ? 'bg-emerald-700/80 text-white hover:bg-emerald-600/90'
                       : 'bg-teal-600/80 text-white hover:bg-teal-500/90'}${serveType ? ' serve-unlock-btn' : ''}`}

@@ -23,8 +23,12 @@ const TABS = [
 ];
 
 const PLAYER_COLS = [
-  { key: 'name',    label: 'Player'  },
-  { key: 'ver',     label: 'VER',   fmt: fmtVER       },
+  { key: 'name',      label: 'Player' },
+  { key: 'mp',        label: 'MP',    fmt: fmtCount     },
+  { key: 'sp',        label: 'SP',    fmt: fmtCount     },
+  { key: 'pos_label', label: 'POS',   fmt: (v) => v ?? '—' },
+  { key: 'pos_mult',  label: '×',     fmt: (v) => v != null ? `×${v.toFixed(2)}` : '—' },
+  { key: 'ver',       label: 'VER',   fmt: fmtVER       },
   { key: 'sa',      label: 'SA',    fmt: fmtCount     },
   { key: 'ace',     label: 'ACE',   fmt: fmtCount     },
   { key: 'ace_pct', label: 'ACE%',  fmt: fmtPct       },

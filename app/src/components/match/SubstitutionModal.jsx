@@ -5,6 +5,8 @@ import { Button } from '../ui/Button';
 import { useMatchStore } from '../../store/matchStore';
 import { db } from '../../db/schema';
 
+const POSITION_OPTIONS = ['OH', 'OPP', 'MB', 'S', 'L', 'DS', 'RS'];
+
 /**
  * Returns eligibility for a bench player.
  * Only hard rule: exhausted players (completed return sub) cannot re-enter.
@@ -25,9 +27,10 @@ export function SubstitutionModal({ onClose }) {
   const exhaustedPlayerIds  = useMatchStore((s) => s.exhaustedPlayerIds);
   const substitutePlayer    = useMatchStore((s) => s.substitutePlayer);
 
-  const [outPlayerId, setOutPlayerId] = useState(null);
-  const [inPlayerId,  setInPlayerId]  = useState(null);
-  const [error,       setError]       = useState('');
+  const [outPlayerId,   setOutPlayerId]   = useState(null);
+  const [inPlayerId,    setInPlayerId]    = useState(null);
+  const [roleOverride,  setRoleOverride]  = useState('');
+  const [error,         setError]         = useState('');
 
   const roster = useLiveQuery(
     () => teamId ? db.players.where('team_id').equals(teamId).filter((p) => p.is_active).toArray() : [],
@@ -41,7 +44,15 @@ export function SubstitutionModal({ onClose }) {
   // Clear bench selection when the court selection changes
   useEffect(() => {
     setInPlayerId(null);
+    setRoleOverride('');
   }, [outPlayerId]);
+
+  // Pre-fill role override from incoming player's roster position
+  useEffect(() => {
+    if (!inPlayerId || !roster) return;
+    const p = roster.find((pl) => pl.id === inPlayerId);
+    setRoleOverride(p?.position ?? '');
+  }, [inPlayerId, roster]);
 
   const outSlotIdx = outPlayerId ? lineup.findIndex((sl) => sl.playerId === outPlayerId) : -1;
   const subsLeft   = maxSubsPerSet - subsUsed;
@@ -51,7 +62,7 @@ export function SubstitutionModal({ onClose }) {
     if (!outPlayerId || !inPlayerId) return;
     const inPlayer = bench.find((p) => p.id === inPlayerId);
     if (!inPlayer) return;
-    const ok = await substitutePlayer(outPlayerId, inPlayer);
+    const ok = await substitutePlayer(outPlayerId, inPlayer, roleOverride || undefined);
     if (ok) onClose();
     else setError('Substitution failed. Check sub limits.');
   };
@@ -124,6 +135,31 @@ export function SubstitutionModal({ onClose }) {
             })}
           </div>
         </div>
+
+        {/* ── Role this set ── */}
+        {inPlayerId && (
+          <div>
+            <p className="text-xs text-slate-400 mb-1.5 font-semibold uppercase tracking-wide">
+              Role this set
+              <span className="ml-2 text-slate-600 normal-case font-normal">used for VER position multiplier</span>
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {POSITION_OPTIONS.map((pos) => (
+                <button
+                  key={pos}
+                  onClick={() => setRoleOverride(pos)}
+                  className={`px-3 py-1 rounded text-xs font-bold border transition-colors
+                    ${roleOverride === pos
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-slate-700 text-slate-300 border-slate-600 hover:border-slate-400'
+                    }`}
+                >
+                  {pos}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── Player In (always visible) ── */}
         <div>

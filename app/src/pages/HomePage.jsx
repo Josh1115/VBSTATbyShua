@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
@@ -8,6 +8,7 @@ import { Button } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { NetDivider } from '../components/ui/NetDivider';
+import { SwipeableMatchCard } from '../components/ui/SwipeableMatchCard';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -19,6 +20,10 @@ const BALL_TYPES = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function fmtSetScores(sets) {
+  return sets.map((s) => `${s.our_score ?? 0}-${s.opp_score ?? 0}`).join(' · ');
+}
 
 async function deleteMatch(matchId) {
   const sets = await db.sets.where('match_id').equals(matchId).toArray();
@@ -51,86 +56,33 @@ function SetPips({ ourSets, oppSets }) {
   );
 }
 
-// Swipe-left to reveal delete. Wraps a single match card row.
-function SwipeableMatchCard({ onDeleteConfirm, animDelay, children }) {
-  const [offset, setOffset]       = useState(0);
-  const [isSnapping, setIsSnapping] = useState(false);
-  const touchStartX = useRef(null);
-  const hasSwiped   = useRef(false);
-  const REVEAL = 72;
-
-  const handleTouchStart = (e) => {
-    touchStartX.current = e.touches[0].clientX;
-    hasSwiped.current   = false;
-    setIsSnapping(false);
-  };
-
-  const handleTouchMove = (e) => {
-    if (touchStartX.current === null) return;
-    const dx = touchStartX.current - e.touches[0].clientX;
-    if (Math.abs(dx) > 5) hasSwiped.current = true;
-    if (dx < 0) { setOffset(0); return; }            // block right-swipe
-    setOffset(Math.min(dx, REVEAL + 16));             // allow slight over-drag
-  };
-
-  const handleTouchEnd = () => {
-    setIsSnapping(true);
-    setOffset(offset > REVEAL * 0.45 ? REVEAL : 0);  // snap open or closed
-    touchStartX.current = null;
-  };
-
-  return (
-    <div
-      className="relative overflow-hidden rounded-xl mb-2 animate-slide-in-right"
-      style={{ animationDelay: animDelay }}
-    >
-      {/* Red delete backing revealed on swipe */}
-      <div
-        className="absolute inset-y-0 right-0 flex items-center justify-center bg-red-600 rounded-r-xl cursor-pointer"
-        style={{ width: REVEAL }}
-        onClick={onDeleteConfirm}
-      >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="3 6 5 6 21 6" />
-          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-          <path d="M10 11v6" />
-          <path d="M14 11v6" />
-          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-        </svg>
-      </div>
-
-      {/* Sliding content layer */}
-      <div
-        style={{
-          transform:  `translateX(-${offset}px)`,
-          transition: isSnapping ? 'transform 280ms cubic-bezier(0.25, 1, 0.5, 1)' : 'none',
-          willChange: 'transform',
-        }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onClickCapture={(e) => {
-          // Block the click that fires after a swipe gesture
-          if (hasSwiped.current) {
-            hasSwiped.current = false;
-            e.stopPropagation();
-          }
-        }}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function HomePage() {
   const navigate = useNavigate();
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [matchView, setMatchView] = useState('recent');
+  const [scoreDetail] = useState(() => localStorage.getItem('vbstat_score_detail') ?? 'sets');
+
+  const todayDisplay = useMemo(() => {
+    const d = new Date();
+    const day = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+    const month = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+    return `${day} · ${month} ${d.getDate()}`;
+  }, []);
 
   const recentMatches = useLiveQuery(async () => {
-    const matches = await db.matches.orderBy('date').reverse().limit(5).toArray();
+    let matches;
+    if (matchView === 'recent') {
+      matches = await db.matches.orderBy('date').reverse().limit(5).toArray();
+    } else {
+      const now = Date.now();
+      const all = await db.matches.toArray();
+      matches = all
+        .sort((a, b) => Math.abs(new Date(a.date) - now) - Math.abs(new Date(b.date) - now))
+        .slice(0, 5)
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+    }
 
     const seasonIds = [...new Set(matches.map((m) => m.season_id).filter(Boolean))];
     const seasons = seasonIds.length ? await db.seasons.bulkGet(seasonIds) : [];
@@ -156,8 +108,16 @@ export function HomePage() {
       active.currentSet = currentSet ?? null;
     }
 
+    const completeIds = enriched.filter((m) => m.status === MATCH_STATUS.COMPLETE).map((m) => m.id);
+    if (completeIds.length) {
+      const allSets = await db.sets.where('match_id').anyOf(completeIds).sortBy('set_number');
+      const setsById = {};
+      for (const s of allSets) { (setsById[s.match_id] ??= []).push(s); }
+      enriched.forEach((m) => { m.sets = setsById[m.id] ?? []; });
+    }
+
     return enriched;
-  }, []);
+  }, [matchView]);
 
   const allTimeRecord = useLiveQuery(async () => {
     const all = await db.matches.where('status').equals(MATCH_STATUS.COMPLETE).toArray();
@@ -258,7 +218,7 @@ export function HomePage() {
           aria-hidden="true"
           viewBox="0 0 600 66"
           preserveAspectRatio="xMidYMid slice"
-          style={{ opacity: 0.07 }}
+          style={{ opacity: 0.18 }}
         >
           <defs>
             <pattern id="vb-net-mesh" x="0" y="0" width="18" height="10" patternUnits="userSpaceOnUse">
@@ -307,6 +267,12 @@ export function HomePage() {
             by {localStorage.getItem('vbstat_coach_name') || 'SHUA'}
           </span>
         </h1>
+        <div
+          className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 mt-0.5"
+          style={{ fontFamily: "'Orbitron', sans-serif" }}
+        >
+          {todayDisplay}
+        </div>
       </header>
 
       <div className="p-4 md:p-6 space-y-4">
@@ -427,16 +393,32 @@ export function HomePage() {
 
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">
-              Recent Matches
+              {matchView === 'recent' ? 'Recent' : 'Closest'} Matches
               {displayMatches.length > 0 && (
                 <span className="ml-1.5 text-[10px] font-bold bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded-full">{displayMatches.length}</span>
               )}
             </h2>
-            {displayMatches.length > 0 && (
-              <button onClick={() => navigate('/seasons')} className="text-xs text-primary hover:text-orange-300 transition-colors">
-                See all →
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              <div className="flex bg-slate-800 rounded-lg p-0.5">
+                <button
+                  onClick={() => setMatchView('recent')}
+                  className={`text-[10px] font-semibold px-2 py-1 rounded-md transition-colors ${matchView === 'recent' ? 'bg-slate-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  Recent
+                </button>
+                <button
+                  onClick={() => setMatchView('closest')}
+                  className={`text-[10px] font-semibold px-2 py-1 rounded-md transition-colors ${matchView === 'closest' ? 'bg-slate-600 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  Closest
+                </button>
+              </div>
+              {displayMatches.length > 0 && (
+                <button onClick={() => navigate('/seasons')} className="text-xs text-primary hover:text-orange-300 transition-colors">
+                  See all →
+                </button>
+              )}
+            </div>
           </div>
 
           {displayMatches.length === 0 && (
@@ -462,15 +444,14 @@ export function HomePage() {
               onDeleteConfirm={() => setConfirmDelete(match)}
               animDelay={`${index * 40}ms`}
             >
-              <div className="bg-surface flex items-center">
-                <button
-                  onClick={() => navigate(
-                    match.status === MATCH_STATUS.COMPLETE
-                      ? `/matches/${match.id}/summary`
-                      : `/matches/${match.id}/live`
-                  )}
-                  className="flex-1 p-4 text-left flex items-center justify-between hover:bg-slate-700 rounded-l-xl transition-colors"
-                >
+              <button
+                onClick={() => navigate(
+                  match.status === MATCH_STATUS.COMPLETE
+                    ? `/matches/${match.id}/summary`
+                    : `/matches/${match.id}/live`
+                )}
+                className="w-full bg-surface p-4 text-left flex items-center justify-between hover:bg-slate-700 rounded-xl transition-colors"
+              >
                   <div>
                     <div className="font-semibold">{match.opponent_name ?? 'vs. Unknown'}</div>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -505,7 +486,10 @@ export function HomePage() {
                           </span>
                         );
                       })()}
-                      <SetPips ourSets={match.our_sets_won} oppSets={match.opp_sets_won} />
+                      {scoreDetail === 'scores' && match.sets?.length
+                        ? <span className="text-xs font-mono text-slate-300">{fmtSetScores(match.sets)}</span>
+                        : <SetPips ourSets={match.our_sets_won} oppSets={match.opp_sets_won} />
+                      }
                     </div>
                     <div className={`text-xs flex items-center gap-1 ${match.status === MATCH_STATUS.IN_PROGRESS ? 'text-primary' : 'text-slate-400'}`}>
                       {match.status === MATCH_STATUS.IN_PROGRESS && (
@@ -516,23 +500,7 @@ export function HomePage() {
                         : 'Setup'}
                     </div>
                   </div>
-                </button>
-
-                {/* Static trash button — visible on desktop / non-touch */}
-                <button
-                  onClick={() => setConfirmDelete(match)}
-                  className="px-4 py-4 text-slate-600 hover:text-red-400 transition-colors rounded-r-xl"
-                  title="Delete match"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                    <path d="M10 11v6" />
-                    <path d="M14 11v6" />
-                    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                  </svg>
-                </button>
-              </div>
+              </button>
             </SwipeableMatchCard>
           ))}
         </section>

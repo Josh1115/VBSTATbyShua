@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/schema';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { useUiStore, selectShowToast } from '../../store/uiStore';
+import { fmtDateShort } from '../../stats/formatters';
 
 // Standard FIVB zone layout from server's POV (aiming at opponent's court)
 // Front row: 4 | 3 | 2    Back row: 5 | 6 | 1
@@ -24,10 +25,6 @@ function calcStats(serves) {
     if (typeof s === 'number') zoneCounts[s] = (zoneCounts[s] ?? 0) + 1;
   }
   return { total, inCount, netCount, outCount, zoneCounts };
-}
-
-function fmtDate(iso) {
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 // ─── Shared UI primitives ─────────────────────────────────────────────────────
@@ -115,7 +112,10 @@ function Chip({ label, value, color = 'text-white' }) {
 
 function SetupView({ onStart }) {
   const [mode,    setMode]    = useState('individual'); // 'team' | 'individual'
-  const [teamId,  setTeamId]  = useState(null);
+  const [teamId,  setTeamId]  = useState(() => {
+    const saved = parseInt(localStorage.getItem('vbstat_default_team_id'), 10);
+    return !isNaN(saved) ? saved : null;
+  });
   const [checked, setChecked] = useState(new Set());
 
   const teams   = useLiveQuery(() => db.teams.orderBy('name').toArray(), []);
@@ -264,7 +264,7 @@ function SetupView({ onStart }) {
               <div key={s.id} className="px-4 py-2.5 border-b border-slate-700/50 last:border-0">
                 <div className="flex items-baseline justify-between">
                   <span className="text-sm font-semibold truncate mr-2">{s.label}</span>
-                  <span className="text-xs text-slate-500 flex-shrink-0">{fmtDate(s.date)}</span>
+                  <span className="text-xs text-slate-500 flex-shrink-0">{fmtDateShort(s.date)}</span>
                 </div>
                 <div className="text-xs text-slate-400 mt-0.5">{total} serves · {pct}% in</div>
               </div>

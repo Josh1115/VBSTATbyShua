@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/schema';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { useUiStore, selectShowToast } from '../../store/uiStore';
+import { fmtDateShort, calcAPR } from '../../stats/formatters';
 
 const RATING_BG = {
   0: 'bg-red-600',
@@ -10,15 +11,6 @@ const RATING_BG = {
   2: 'bg-yellow-500',
   3: 'bg-emerald-500',
 };
-
-function calcAPR(passes) {
-  if (!passes.length) return null;
-  return (passes.reduce((s, v) => s + v, 0) / passes.length).toFixed(2);
-}
-
-function fmtDate(iso) {
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
 
 function StatChip({ label, value, color = 'text-white' }) {
   return (
@@ -44,7 +36,10 @@ function ActionBtn({ label, sub, onClick, color = 'bg-slate-700' }) {
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 function SetupView({ onStart }) {
-  const [teamId,   setTeamId]   = useState(null);
+  const [teamId,   setTeamId]   = useState(() => {
+    const saved = parseInt(localStorage.getItem('vbstat_default_team_id'), 10);
+    return !isNaN(saved) ? saved : null;
+  });
   const [opponent, setOpponent] = useState('');
   const [checked,  setChecked]  = useState(new Set());
 
@@ -164,7 +159,7 @@ function SetupView({ onStart }) {
               <div key={s.id} className="px-4 py-2.5 border-b border-slate-700/50 last:border-0">
                 <div className="flex items-baseline justify-between">
                   <span className="text-sm font-semibold truncate mr-2">{s.label}</span>
-                  <span className="text-xs text-slate-500 flex-shrink-0">{fmtDate(s.date)}</span>
+                  <span className="text-xs text-slate-500 flex-shrink-0">{fmtDateShort(s.date)}</span>
                 </div>
                 {sets.length > 0 && (
                   <div className="text-xs text-slate-400 mt-0.5">

@@ -5,7 +5,6 @@ import { db } from '../db/schema';
 import { computeMatchStats } from '../stats/engine';
 import { exportMatchCSV, exportMatchPDF, exportMaxPrepsCSV } from '../stats/export';
 import { fmtHitting, fmtPassRating, fmtPct, fmtCount, fmtDate, fmtVER } from '../stats/formatters';
-import { POSITION_MULTIPLIERS } from '../stats/engine';
 import { ROTATION_COLS } from '../stats/columns';
 import { PageHeader } from '../components/layout/PageHeader';
 import { TabBar } from '../components/ui/Tab';
@@ -459,9 +458,15 @@ const ShareCard = ({ cardRef, match, sets, stats, fmtDate }) => {
   );
 };
 
+const SP_MP_COLS = [
+  { key: 'sp', label: 'SP', fmt: fmtCount },
+  { key: 'mp', label: 'MP', fmt: fmtCount },
+];
+
 const SERVING_COLS = {
   all: [
     { key: 'name',     label: 'Player' },
+    ...SP_MP_COLS,
     { key: 'sa',       label: 'SA',    fmt: fmtCount },
     { key: 'ace',      label: 'ACE',   fmt: fmtCount },
     { key: 'se',       label: 'SE',    fmt: fmtCount },
@@ -474,6 +479,7 @@ const SERVING_COLS = {
   ],
   float: [
     { key: 'name',      label: 'Player' },
+    ...SP_MP_COLS,
     { key: 'f_sa',      label: 'SA',    fmt: fmtCount },
     { key: 'f_ace',     label: 'ACE',   fmt: fmtCount },
     { key: 'f_se',      label: 'SE',    fmt: fmtCount },
@@ -482,6 +488,7 @@ const SERVING_COLS = {
   ],
   top: [
     { key: 'name',      label: 'Player' },
+    ...SP_MP_COLS,
     { key: 't_sa',      label: 'SA',    fmt: fmtCount },
     { key: 't_ace',     label: 'ACE',   fmt: fmtCount },
     { key: 't_se',      label: 'SE',    fmt: fmtCount },
@@ -494,6 +501,7 @@ const TAB_COLUMNS = {
   serving: SERVING_COLS.all,
   passing: [
     { key: 'name',    label: 'Player' },
+    ...SP_MP_COLS,
     { key: 'pa',      label: 'PA',    fmt: fmtCount     },
     { key: 'p0',      label: 'P0',    fmt: fmtCount     },
     { key: 'p1',      label: 'P1',    fmt: fmtCount     },
@@ -503,17 +511,21 @@ const TAB_COLUMNS = {
     { key: 'pp_pct',  label: '3OPT%', fmt: fmtPct       },
   ],
   attacking: [
-    { key: 'name',    label: 'Player' },
-    { key: 'ta',      label: 'TA',    fmt: fmtCount   },
-    { key: 'k',       label: 'K',     fmt: fmtCount   },
-    { key: 'ae',      label: 'AE',    fmt: fmtCount   },
-    { key: 'hit_pct', label: 'HIT%',  fmt: fmtHitting },
-    { key: 'k_pct',   label: 'K%',    fmt: fmtPct     },
-    { key: 'kps',     label: 'KPS',   fmt: (v) => fmtCount(v != null ? +v.toFixed(2) : null) },
-    { key: 'ver',     label: 'VER',   fmt: fmtVER     },
+    { key: 'name',      label: 'Player' },
+    ...SP_MP_COLS,
+    { key: 'ta',        label: 'TA',    fmt: fmtCount   },
+    { key: 'k',         label: 'K',     fmt: fmtCount   },
+    { key: 'ae',        label: 'AE',    fmt: fmtCount   },
+    { key: 'hit_pct',   label: 'HIT%',  fmt: fmtHitting },
+    { key: 'k_pct',     label: 'K%',    fmt: fmtPct     },
+    { key: 'kps',       label: 'KPS',   fmt: (v) => fmtCount(v != null ? +v.toFixed(2) : null) },
+    { key: 'pos_label', label: 'POS',   fmt: (v) => v ?? '—' },
+    { key: 'pos_mult',  label: '×',     fmt: (v) => v != null ? `×${v.toFixed(2)}` : '—' },
+    { key: 'ver',       label: 'VER',   fmt: fmtVER     },
   ],
   blocking: [
     { key: 'name',  label: 'Player' },
+    ...SP_MP_COLS,
     { key: 'bs',    label: 'BS',    fmt: fmtCount },
     { key: 'ba',    label: 'BA',    fmt: fmtCount },
     { key: 'be',    label: 'BE',    fmt: fmtCount },
@@ -521,6 +533,7 @@ const TAB_COLUMNS = {
   ],
   defense: [
     { key: 'name',  label: 'Player' },
+    ...SP_MP_COLS,
     { key: 'dig',   label: 'DIG',   fmt: fmtCount },
     { key: 'de',    label: 'DE',    fmt: fmtCount },
     { key: 'dips',  label: 'DiPS',  fmt: (v) => fmtCount(v != null ? +v.toFixed(2) : null) },
@@ -529,6 +542,7 @@ const TAB_COLUMNS = {
   ],
   setting: [
     { key: 'name',  label: 'Player' },
+    ...SP_MP_COLS,
     { key: 'ast',   label: 'AST',   fmt: fmtCount },
     { key: 'bhe',   label: 'BHE',   fmt: fmtCount },
     { key: 'aps',   label: 'APS',   fmt: fmtPassRating },
@@ -580,19 +594,13 @@ export function MatchSummaryPage() {
 
   const playerRows = useMemo(() =>
     stats
-      ? Object.entries(stats.players).map(([pid, s]) => {
-          const posLabel = players?.[pid]?.position ?? null;
-          const posMult  = POSITION_MULTIPLIERS[posLabel] ?? 1.0;
-          return {
-            id:       pid,
-            name:     playerNames[pid] ?? `#${pid}`,
-            position: posLabel,
-            ...s,
-            ver:  s.ver != null ? s.ver * posMult : null,
-          };
-        })
+      ? Object.entries(stats.players).map(([pid, s]) => ({
+          id:   pid,
+          name: playerNames[pid] ?? `#${pid}`,
+          ...s,
+        }))
       : [],
-    [stats, players, playerNames]
+    [stats, playerNames]
   );
 
   const rotationRows = useMemo(() =>

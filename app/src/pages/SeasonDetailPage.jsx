@@ -9,6 +9,21 @@ import { exportMaxPrepsCSV } from '../stats/export';
 import { PageHeader } from '../components/layout/PageHeader';
 import { Button } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { SwipeableMatchCard } from '../components/ui/SwipeableMatchCard';
+
+async function deleteMatch(matchId) {
+  const sets = await db.sets.where('match_id').equals(matchId).toArray();
+  const setIds = sets.map((s) => s.id);
+  await Promise.all([
+    db.contacts.where('match_id').equals(matchId).delete(),
+    db.rallies.where('set_id').anyOf(setIds).delete(),
+    db.lineups.where('set_id').anyOf(setIds).delete(),
+    db.substitutions.where('set_id').anyOf(setIds).delete(),
+  ]);
+  await db.sets.where('match_id').equals(matchId).delete();
+  await db.matches.delete(matchId);
+}
 
 export function SeasonDetailPage() {
   const { seasonId } = useParams();
@@ -39,7 +54,10 @@ export function SeasonDetailPage() {
   }, [id]);
 
   // Schedule-game modal state (must be before early return)
+  const [confirmDelete, setConfirmDelete] = useState(null);
+
   const [schedOpen,      setSchedOpen]      = useState(false);
+  const [editMatchId,    setEditMatchId]    = useState(null);
   const [schedOpp,       setSchedOpp]       = useState('');
   const [schedOppAbbr,   setSchedOppAbbr]   = useState('');
   const [schedDate,      setSchedDate]      = useState(() => new Date().toISOString().slice(0, 10));
@@ -57,6 +75,28 @@ export function SeasonDetailPage() {
     exportMaxPrepsCSV(stats.players, playerNames, playerJerseys, stats.setsPlayed, `match-${matchId}-maxpreps.txt`);
   }
 
+  function resetSchedForm() {
+    setEditMatchId(null);
+    setSchedOpp('');
+    setSchedOppAbbr('');
+    setSchedDate(new Date().toISOString().slice(0, 10));
+    setSchedLoc('home');
+    setSchedConf('non-con');
+    setSchedMatchType('reg-season');
+    setSchedOpen(false);
+  }
+
+  function openEditMatch(match) {
+    setEditMatchId(match.id);
+    setSchedOpp(match.opponent_name ?? '');
+    setSchedOppAbbr(match.opponent_abbr ?? '');
+    setSchedDate(match.date ? match.date.slice(0, 10) : new Date().toISOString().slice(0, 10));
+    setSchedLoc(match.location ?? 'home');
+    setSchedConf(match.conference ?? 'non-con');
+    setSchedMatchType(match.match_type ?? 'reg-season');
+    setSchedOpen(true);
+  }
+
   async function handleScheduleGame() {
     if (!schedOpp.trim()) return;
     setSchedSaving(true);
@@ -66,24 +106,21 @@ export function SeasonDetailPage() {
         const oppId = await db.opponents.add({ name: schedOpp.trim() });
         oppRecord = { id: oppId, name: schedOpp.trim() };
       }
-      await db.matches.add({
-        season_id:     id,
+      const fields = {
         opponent_id:   oppRecord.id,
         opponent_name: oppRecord.name,
         opponent_abbr: schedOppAbbr.trim().toUpperCase() || null,
-        status:        MATCH_STATUS.SCHEDULED,
         date:          schedDate ? new Date(schedDate + 'T12:00:00').toISOString() : new Date().toISOString(),
         location:      schedLoc,
         conference:    schedConf,
         match_type:    schedMatchType,
-      });
-      setSchedOpp('');
-      setSchedOppAbbr('');
-      setSchedDate(new Date().toISOString().slice(0, 10));
-      setSchedLoc('home');
-      setSchedConf('non-con');
-      setSchedMatchType('reg-season');
-      setSchedOpen(false);
+      };
+      if (editMatchId) {
+        await db.matches.update(editMatchId, fields);
+      } else {
+        await db.matches.add({ season_id: id, status: MATCH_STATUS.SCHEDULED, ...fields });
+      }
+      resetSchedForm();
     } finally {
       setSchedSaving(false);
     }
@@ -137,15 +174,41 @@ export function SeasonDetailPage() {
           ) : (
             <div className="space-y-2">
               {matches.map((match) => {
-                const isScheduled = match.status === MATCH_STATUS.SCHEDULED;
+                if (match.status === MATCH_STATUS.SCHEDULED) {
+                  return (
+                    <SwipeableMatchCard
+                      key={match.id}
+                      onDeleteConfirm={() => setConfirmDelete(match)}
+                    >
+                      <div className="w-full bg-surface rounded-xl px-4 py-3 flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">{match.opponent_name}</div>
+                          <div className="text-xs text-slate-400">{fmtDate(match.date)}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => openEditMatch(match)}
+                            className="text-xs font-semibold px-2.5 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => navigate(`/matches/new?season=${id}&match=${match.id}`)}
+                            className="text-xs font-semibold px-2.5 py-1 rounded bg-amber-900/40 text-amber-400 hover:bg-amber-900/60 transition-colors"
+                          >
+                            ▶ Start
+                          </button>
+                        </div>
+                      </div>
+                    </SwipeableMatchCard>
+                  );
+                }
                 return (
                   <button
                     key={match.id}
                     onClick={() => navigate(
                       match.status === MATCH_STATUS.COMPLETE
                         ? `/matches/${match.id}/summary`
-                        : isScheduled
-                        ? `/matches/new?season=${id}&match=${match.id}`
                         : `/matches/${match.id}/live`
                     )}
                     className="w-full bg-surface rounded-xl px-4 py-3 text-left flex items-center justify-between hover:bg-slate-700 transition-colors"
@@ -164,30 +227,22 @@ export function SeasonDetailPage() {
                         </button>
                       )}
                       <div className="text-right flex flex-col items-end gap-0.5">
-                        {isScheduled ? (
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded bg-amber-900/40 text-amber-400">
-                            ▶ Start
-                          </span>
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-1.5">
-                              {match.status === MATCH_STATUS.COMPLETE && (() => {
-                                const won = (match.our_sets_won ?? 0) > (match.opp_sets_won ?? 0);
-                                return (
-                                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${won ? 'bg-emerald-900/60 text-emerald-400' : 'bg-red-900/60 text-red-400'}`}>
-                                    {won ? 'W' : 'L'}
-                                  </span>
-                                );
-                              })()}
-                              <span className="text-sm font-mono">{match.our_sets_won ?? 0}–{match.opp_sets_won ?? 0}</span>
-                            </div>
-                            <div className={`text-xs ${match.status === MATCH_STATUS.IN_PROGRESS ? 'text-primary' : 'text-slate-400'}`}>
-                              {match.status === MATCH_STATUS.IN_PROGRESS ? 'Live'
-                                : match.status === MATCH_STATUS.COMPLETE ? 'Final'
-                                : 'Setup'}
-                            </div>
-                          </>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {match.status === MATCH_STATUS.COMPLETE && (() => {
+                            const won = (match.our_sets_won ?? 0) > (match.opp_sets_won ?? 0);
+                            return (
+                              <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${won ? 'bg-emerald-900/60 text-emerald-400' : 'bg-red-900/60 text-red-400'}`}>
+                                {won ? 'W' : 'L'}
+                              </span>
+                            );
+                          })()}
+                          <span className="text-sm font-mono">{match.our_sets_won ?? 0}–{match.opp_sets_won ?? 0}</span>
+                        </div>
+                        <div className={`text-xs ${match.status === MATCH_STATUS.IN_PROGRESS ? 'text-primary' : 'text-slate-400'}`}>
+                          {match.status === MATCH_STATUS.IN_PROGRESS ? 'Live'
+                            : match.status === MATCH_STATUS.COMPLETE ? 'Final'
+                            : 'Setup'}
+                        </div>
                       </div>
                     </div>
                   </button>
@@ -198,11 +253,25 @@ export function SeasonDetailPage() {
         </section>
       </div>
 
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete Match?"
+          message={`Delete scheduled match vs. ${confirmDelete.opponent_name ?? 'Unknown'}? This cannot be undone.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={async () => {
+            await deleteMatch(confirmDelete.id);
+            setConfirmDelete(null);
+          }}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
       {/* Schedule Game Modal */}
       {schedOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-bg w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-6 space-y-4 shadow-2xl">
-            <h2 className="text-lg font-bold">Schedule Game</h2>
+            <h2 className="text-lg font-bold">{editMatchId ? 'Edit Scheduled Game' : 'Schedule Game'}</h2>
 
             {/* Opponent */}
             <div>
@@ -303,7 +372,7 @@ export function SeasonDetailPage() {
 
             {/* Actions */}
             <div className="flex gap-3 pt-2">
-              <Button variant="secondary" className="flex-1" onClick={() => setSchedOpen(false)}>
+              <Button variant="secondary" className="flex-1" onClick={resetSchedForm}>
                 Cancel
               </Button>
               <Button

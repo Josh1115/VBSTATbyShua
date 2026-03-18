@@ -130,6 +130,7 @@ const INITIAL_STATE = {
   pointHistory:          [], // { side: 'us'|'them' }[] — one entry per point this set
   pendingSetWin:         null, // 'us' | 'them' | null — set win detected, awaiting confirmation
   format:                null, // 'best_of_3' | 'best_of_5'
+  playerNicknames:       {},   // { [playerId]: nickname string } — populated at lineup load
 };
 
 export const useMatchStore = create((set, get) => ({
@@ -141,7 +142,8 @@ export const useMatchStore = create((set, get) => ({
     set({ matchId, currentSetId: setId, teamId, format, maxSubsPerSet });
   },
   resetMatch: () => set(INITIAL_STATE),
-  setLineup:  (lineup)   => set({ lineup }),
+  setLineup:          (lineup) => set({ lineup }),
+  setPlayerNicknames: (map)    => set({ playerNicknames: map }),
   setLibero:  (liberoId) => set({ liberoId }),
 
   rotateForward:  () => set((s) => ({ lineup: rotateFwd(s.lineup) })),
@@ -511,7 +513,7 @@ export const useMatchStore = create((set, get) => ({
     }
   },
 
-  substitutePlayer: async (outPlayerId, inPlayer) => {
+  substitutePlayer: async (outPlayerId, inPlayer, positionOverride) => {
     const s = get();
     if (s.subsUsed >= s.maxSubsPerSet) return false;
 
@@ -523,6 +525,7 @@ export const useMatchStore = create((set, get) => ({
     const prevSubPairs          = s.subPairs;
     const prevExhaustedPlayerIds = s.exhaustedPlayerIds;
     const liberoGoingOut        = outPlayerId === s.liberoId;
+    const inPositionLabel       = positionOverride ?? inPlayer.position ?? '';
 
     // "Return sub" = incoming player is returning to a slot they previously occupied
     const isReturnSub = s.subPairs[inPlayer.id] !== undefined && s.subPairs[inPlayer.id] === slotIdx;
@@ -532,19 +535,20 @@ export const useMatchStore = create((set, get) => ({
       : s.exhaustedPlayerIds;
 
     const subDbId = await db.substitutions.add({
-      set_id:       s.currentSetId,
-      rally_number: 0,
-      player_out:   outPlayerId,
-      player_in:    inPlayer.id,
-      position:     slotIdx + 1,
-      libero_swap:  false,
-      timestamp:    Date.now(),
+      set_id:            s.currentSetId,
+      rally_number:      0,
+      player_out:        outPlayerId,
+      player_in:         inPlayer.id,
+      position:          slotIdx + 1,
+      libero_swap:       false,
+      in_position_label: inPositionLabel,
+      timestamp:         Date.now(),
     });
 
     set({
       lineup: s.lineup.map((sl, i) =>
         i === slotIdx
-          ? { ...sl, playerId: inPlayer.id, playerName: inPlayer.name, jersey: inPlayer.jersey_number, positionLabel: inPlayer.position }
+          ? { ...sl, playerId: inPlayer.id, playerName: inPlayer.name, jersey: inPlayer.jersey_number, positionLabel: inPositionLabel }
           : sl
       ),
       subsUsed:           s.subsUsed + 1,

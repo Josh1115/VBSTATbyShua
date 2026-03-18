@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { PageHeader } from '../components/layout/PageHeader';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -93,6 +94,39 @@ function useCoachName() {
   return [name, save];
 }
 
+const PLAYER_NAME_FORMATS = [
+  { id: 'initial_last', label: 'Initial + Last',   example: 'J. Smith'   },
+  { id: 'last',         label: 'Last Name',         example: 'Smith'      },
+  { id: 'first',        label: 'First Name',        example: 'John'       },
+  { id: 'first_last',   label: 'First + Last',      example: 'John Smith' },
+  { id: 'nickname',     label: 'Nickname',          example: 'Johnny'     },
+];
+
+function usePlayerNameFormat() {
+  const [fmt, setFmt] = useState(() => localStorage.getItem('vbstat_player_name_format') ?? 'initial_last');
+  const save = (id) => { localStorage.setItem('vbstat_player_name_format', id); setFmt(id); };
+  return [fmt, save];
+}
+
+function useScoreDetail() {
+  const [val, setVal] = useState(() => localStorage.getItem('vbstat_score_detail') ?? 'sets');
+  const save = (v) => { localStorage.setItem('vbstat_score_detail', v); setVal(v); };
+  return [val, save];
+}
+
+function useDefaultTeam() {
+  const [defaultTeamId, setDefaultTeamId] = useState(() => {
+    const saved = parseInt(localStorage.getItem('vbstat_default_team_id'), 10);
+    return !isNaN(saved) ? saved : null;
+  });
+  const save = (id) => {
+    if (id == null) localStorage.removeItem('vbstat_default_team_id');
+    else localStorage.setItem('vbstat_default_team_id', String(id));
+    setDefaultTeamId(id);
+  };
+  return [defaultTeamId, save];
+}
+
 export function SettingsPage() {
   const showToast    = useUiStore((s) => s.showToast);
   const fileInputRef = useRef(null);
@@ -101,7 +135,11 @@ export function SettingsPage() {
 
   const [amoled,      saveAmoled]      = useAmoledMode();
   const [accent,      saveAccent]      = useAccentColor();
-  const [coachName,   saveCoachName]   = useCoachName();
+  const [coachName,     saveCoachName]     = useCoachName();
+  const [defaultTeamId,    saveDefaultTeam]    = useDefaultTeam();
+  const [scoreDetail,      saveScoreDetail]    = useScoreDetail();
+  const [playerNameFormat, savePlayerNameFormat] = usePlayerNameFormat();
+  const teams = useLiveQuery(() => db.teams.orderBy('name').toArray(), []);
   const [wakeLock,    saveWakeLock]    = useToggleSetting('vbstat_wake_lock');
   const [hapticOn,    saveHaptic]      = useToggleSetting('vbstat_haptic');
   const [flipLayout,  saveFlipLayout]  = useToggleSetting('vbstat_flip_layout');
@@ -233,6 +271,47 @@ export function SettingsPage() {
               />
             </div>
 
+            {/* Default team */}
+            <div>
+              <label className="block text-sm font-medium mb-1">Default Team</label>
+              <div className="text-xs text-slate-400 mb-2">Pre-selected in tool pages and session setup</div>
+              <select
+                value={defaultTeamId ?? ''}
+                onChange={(e) => saveDefaultTeam(Number(e.target.value) || null)}
+                className="w-full bg-bg border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary"
+              >
+                <option value="">No default</option>
+                {(teams ?? []).map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Match card score display */}
+            <div>
+              <div className="text-sm font-medium mb-0.5">Match Card Scores</div>
+              <div className="text-xs text-slate-400 mb-2">How scores appear on match cards</div>
+              <div className="flex gap-2">
+                {[
+                  { val: 'sets',   label: 'Set Count',   example: '●●○' },
+                  { val: 'scores', label: 'Set Scores',  example: '25-18 · 25-22' },
+                ].map(({ val, label, example }) => (
+                  <button
+                    key={val}
+                    onClick={() => saveScoreDetail(val)}
+                    className={`flex-1 py-2 px-2 rounded-lg text-sm font-semibold border transition-colors flex flex-col items-center gap-0.5 ${
+                      scoreDetail === val
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-bg text-slate-300 border-slate-600 hover:border-slate-400'
+                    }`}
+                  >
+                    <span>{label}</span>
+                    <span className={`text-[10px] font-normal font-mono ${scoreDetail === val ? 'text-orange-100/70' : 'text-slate-500'}`}>{example}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Accent color */}
             <div>
               <div className="text-sm font-medium mb-1">Accent Color</div>
@@ -325,6 +404,30 @@ export function SettingsPage() {
               >
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${hapticOn ? 'translate-x-5' : ''}`} />
               </button>
+            </div>
+
+            {/* Player name format */}
+            <div className="py-3 first:pt-0 last:pb-0">
+              <div className="text-sm font-medium mb-0.5">Player Name Format</div>
+              <div className="text-xs text-slate-400 mb-3">How names appear on the player badge bar during a match</div>
+              <div className="flex flex-col gap-1.5">
+                {PLAYER_NAME_FORMATS.map(({ id, label, example }) => (
+                  <button
+                    key={id}
+                    onClick={() => savePlayerNameFormat(id)}
+                    className={`flex items-center justify-between px-3 py-2 rounded-lg border text-sm transition-colors ${
+                      playerNameFormat === id
+                        ? 'bg-primary/20 border-primary text-white'
+                        : 'bg-bg border-slate-700 text-slate-300 hover:border-slate-500'
+                    }`}
+                  >
+                    <span className="font-medium">{label}</span>
+                    <span className={`font-mono text-xs ${playerNameFormat === id ? 'text-primary' : 'text-slate-500'}`}>
+                      {example}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Flip team layout */}

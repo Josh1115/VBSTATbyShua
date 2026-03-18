@@ -15,6 +15,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { TabBar } from '../components/ui/Tab';
 import { LineupForm } from '../components/match/LineupForm';
 import { ROMAN } from '../components/court/CourtZonePicker';
+import { SwipeableMatchCard } from '../components/ui/SwipeableMatchCard';
 
 const POS_COLOR = { S: 'blue', OH: 'orange', OPP: 'orange', MB: 'green', L: 'gray', DS: 'gray', RS: 'orange' };
 
@@ -844,31 +845,30 @@ export function TeamDetailPage() {
           ) : (
             <div className="space-y-2">
               {activePlayers.map((player) => (
-                <div key={player.id} className="bg-surface rounded-xl px-4 py-3 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-mono font-bold text-primary shrink-0">
-                    #{player.jersey_number}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold truncate">
-                      {player.name}
-                      {player.is_captain && <span className="ml-1.5 text-xs font-bold text-yellow-400">C</span>}
+                <SwipeableMatchCard key={player.id} onDeleteConfirm={() => setDeletePlayer(player)}>
+                  <div className="bg-surface rounded-xl px-4 py-3 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-mono font-bold text-primary shrink-0">
+                      #{player.jersey_number}
                     </div>
-                    <div className="flex gap-1 flex-wrap items-center">
-                      <Badge color={POS_COLOR[player.position] ?? 'gray'}>{player.position}</Badge>
-                      {player.secondary_position && (
-                        <Badge color={POS_COLOR[player.secondary_position] ?? 'gray'}>{player.secondary_position}</Badge>
-                      )}
-                      {player.height_ft != null && (
-                        <span className="text-xs text-slate-400">{player.height_ft}'{player.height_in != null ? player.height_in : 0}"</span>
-                      )}
-                      {player.year && <span className="text-xs text-slate-400">{player.year}</span>}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold truncate">
+                        {player.name}
+                        {player.is_captain && <span className="ml-1.5 text-xs font-bold text-yellow-400">C</span>}
+                      </div>
+                      <div className="flex gap-1 flex-wrap items-center">
+                        <Badge color={POS_COLOR[player.position] ?? 'gray'}>{player.position}</Badge>
+                        {player.secondary_position && (
+                          <Badge color={POS_COLOR[player.secondary_position] ?? 'gray'}>{player.secondary_position}</Badge>
+                        )}
+                        {player.height_ft != null && (
+                          <span className="text-xs text-slate-400">{player.height_ft}'{player.height_in != null ? player.height_in : 0}"</span>
+                        )}
+                        {player.year && <span className="text-xs text-slate-400">{player.year}</span>}
+                      </div>
                     </div>
+                    <button onClick={() => setEditPlayer(player)} className="text-slate-400 hover:text-white text-sm shrink-0">Edit</button>
                   </div>
-                  <div className="flex gap-3 shrink-0">
-                    <button onClick={() => setEditPlayer(player)} className="text-slate-400 hover:text-white text-sm">Edit</button>
-                    <button onClick={() => setDeletePlayer(player)} className="text-red-400 hover:text-red-300 text-sm">Remove</button>
-                  </div>
-                </div>
+                </SwipeableMatchCard>
               ))}
             </div>
           )}

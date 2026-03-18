@@ -851,3 +851,10 @@
   animation: perfect-pass-pop 820ms ease-out forwards;
   pointer-events: none;
 }
+
+/* ── Serve court landing picker ── */
+@keyframes serve-court-in {
+  from { transform: scale(0.88); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.serve-court-in { animation: serve-court-in 180ms var(--ease-spring) both; }
