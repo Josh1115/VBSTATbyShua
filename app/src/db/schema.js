@@ -2,14 +2,21 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('VBAPPv2');
 
-// v7: add compound indexes for common cross-column query patterns
-//   contacts [match_id+set_id]    → set-scoped stat queries (avoids full-match scan)
-//   contacts [match_id+player_id] → per-player queries within a match
-//   matches  [season_id+date]     → season schedule sorted by date
-//   matches  [status+date]        → find live/recent matches efficiently
+// v8: remove compound indexes — they are not used by any query and are not
+//   supported in Safari/WebKit before iOS 15.2, causing the v7 migration to
+//   fail and breaking all IndexedDB writes on iPad.
+db.version(8).stores({
+  contacts: '++id, match_id, player_id, action, set_id, rally_id, rotation_num',
+  matches:  '++id, season_id, status, date',
+});
+
+// v7: originally added compound indexes; changed to simple indexes because
+//   compound indexes are not supported in Safari/WebKit before iOS 15.2.
+//   Users already at v7 with compound indexes are cleaned up by v8 above.
+//   Users stuck at v6 (failed v7) can now migrate through v7 successfully.
 db.version(7).stores({
-  contacts: '++id, match_id, player_id, action, set_id, rally_id, rotation_num, [match_id+set_id], [match_id+player_id]',
-  matches:  '++id, season_id, status, date, [season_id+date], [status+date]',
+  contacts: '++id, match_id, player_id, action, set_id, rally_id, rotation_num',
+  matches:  '++id, season_id, status, date',
 });
 
 db.version(6).stores({
