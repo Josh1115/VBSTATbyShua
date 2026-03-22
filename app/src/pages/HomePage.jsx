@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { STORAGE_KEYS, getStorageItem } from '../utils/storage';
 import { useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
@@ -61,8 +62,8 @@ function SetPips({ ourSets, oppSets }) {
 export function HomePage() {
   const navigate = useNavigate();
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [matchView, setMatchView] = useState(() => localStorage.getItem('vbstat_match_view_default') ?? 'recent');
-  const [scoreDetail] = useState(() => localStorage.getItem('vbstat_score_detail') ?? 'sets');
+  const [matchView, setMatchView] = useState(() => getStorageItem(STORAGE_KEYS.MATCH_VIEW_DEFAULT, 'recent'));
+  const scoreDetail = getStorageItem(STORAGE_KEYS.SCORE_DETAIL, 'sets');
 
   const todayDisplay = useMemo(() => {
     const d = new Date();
@@ -264,7 +265,7 @@ export function HomePage() {
             VBSTAT
           </span>
           <span className="text-slate-400 font-normal text-lg">
-            by {localStorage.getItem('vbstat_coach_name') || 'SHUA'}
+            by {getStorageItem(STORAGE_KEYS.COACH_NAME) || 'SHUA'}
           </span>
         </h1>
         <div

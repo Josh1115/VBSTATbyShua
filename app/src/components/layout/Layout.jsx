@@ -1,6 +1,37 @@
+import { Component } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { NavBar } from './NavBar';
 import { useUiStore, selectToast } from '../../store/uiStore';
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen bg-bg flex flex-col items-center justify-center gap-4 p-8 text-center">
+          <p className="text-4xl">⚠️</p>
+          <p className="text-white font-bold text-lg">Something went wrong</p>
+          <p className="text-slate-400 text-sm">{this.state.error.message}</p>
+          <button
+            className="mt-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold"
+            onClick={() => { this.setState({ error: null }); window.location.reload(); }}
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Hide NavBar on live match screen (full-screen immersive)
 const HIDE_NAV = ['/live', '/set-lineup'];
@@ -14,9 +45,11 @@ export function Layout() {
     <div className="min-h-screen bg-bg text-white">
       <main className={hideNav ? '' : 'pb-20'}>
         <div className={hideNav ? '' : 'max-w-2xl mx-auto'}>
-          <div key={pathname} className="animate-page-enter">
-            <Outlet />
-          </div>
+          <ErrorBoundary key={pathname}>
+            <div className="animate-page-enter">
+              <Outlet />
+            </div>
+          </ErrorBoundary>
         </div>
       </main>
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useUiStore, selectShowToast } from '../store/uiStore';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { useMatchStore } from '../store/matchStore';
@@ -11,7 +12,11 @@ import { LineupForm } from '../components/match/LineupForm';
 
 export function SetLineupPage() {
   const { matchId: matchIdParam } = useParams();
-  const navigate      = useNavigate();
+  const navigate       = useNavigate();
+  const [searchParams] = useSearchParams();
+  const revisingSetId  = searchParams.get('setId') ? parseInt(searchParams.get('setId'), 10) : null;
+  const isRevising     = searchParams.get('revise') === '1';
+  const showToast      = useUiStore(selectShowToast);
   const setLineup     = useMatchStore((s) => s.setLineup);
   const setLibero     = useMatchStore((s) => s.setLibero);
   const storeServeSide = useMatchStore((s) => s.serveSide);
@@ -31,6 +36,10 @@ export function SetLineupPage() {
   const [saving,    setSaving]     = useState(false);
   const [error,     setError]      = useState('');
   const [loadPickerOpen, setLoadPickerOpen] = useState(false);
+  const [pendingFormations,  setPendingFormations]  = useState(null);
+  const [pendingPlannedSubs, setPendingPlannedSubs] = useState(null);
+  const [useFormations,      setUseFormations]      = useState(true);
+  const [usePlannedSubs,     setUsePlannedSubs]     = useState(true);
 
   const matchId = parseInt(matchIdParam, 10);
 
@@ -47,7 +56,9 @@ export function SetLineupPage() {
       const sets = await db.sets.where('match_id').equals(matchId).sortBy('set_number');
       setAllSets(sets);
 
-      const currentSet = sets.find((s) => s.status === SET_STATUS.IN_PROGRESS) ?? sets[sets.length - 1];
+      const currentSet = revisingSetId
+        ? sets.find((s) => s.id === revisingSetId)
+        : (sets.find((s) => s.status === SET_STATUS.IN_PROGRESS) ?? sets[sets.length - 1]);
       if (!currentSet) return;
 
       await loadSetData(currentSet);
@@ -103,6 +114,10 @@ export function SetLineupPage() {
     setStartZone(sl.start_zone ?? 1);
     setLiberoId(sl.libero_player_id ? String(sl.libero_player_id) : '');
     setSlotPositions(sl.slot_positions ?? Array(6).fill(''));
+    setPendingFormations(sl.serve_receive_formations ?? null);
+    setPendingPlannedSubs(sl.planned_subs ?? null);
+    setUseFormations(true);
+    setUsePlannedSubs(true);
     setLoadPickerOpen(false);
   };
 
@@ -113,9 +128,11 @@ export function SetLineupPage() {
 
     setSaving(true);
     try {
-      // Update set with libero designation
+      // Update set with libero designation + optional formation/sub data
       await db.sets.update(setId, {
-        libero_player_id: liberoId ? Number(liberoId) : null,
+        libero_player_id:         liberoId ? Number(liberoId) : null,
+        serve_receive_formations: (useFormations  && pendingFormations)  ? pendingFormations  : null,
+        planned_subs:             (usePlannedSubs && pendingPlannedSubs) ? pendingPlannedSubs : null,
       });
 
       // Replace existing lineup rows for this set
@@ -151,10 +168,14 @@ export function SetLineupPage() {
       if (liberoId) setLibero(Number(liberoId));
       useMatchStore.setState({ serveSide: servingSide });
 
-      navigate(`/matches/${matchId}/live`);
+      if (isRevising && revisingSetId) {
+        navigate(`/matches/${matchId}/live?revise=1&setId=${revisingSetId}`);
+      } else {
+        navigate(`/matches/${matchId}/live`);
+      }
     } catch (e) {
+      showToast('Failed to save lineup. Try again.', 'error');
       setError('Failed to save lineup. Try again.');
-      console.error(e);
     } finally {
       setSaving(false);
     }
@@ -244,6 +265,37 @@ export function SetLineupPage() {
               >
                 Load Saved Lineup
               </button>
+            )}
+          </div>
+        )}
+
+        {/* Opt-in toggles for saved formation/sub data */}
+        {(pendingFormations || pendingPlannedSubs) && (
+          <div className="bg-surface rounded-xl px-4 py-3 space-y-2">
+            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">
+              Use data from saved lineup?
+            </p>
+            {pendingFormations && (
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-sm text-slate-300">Serve receive formations</span>
+                <input
+                  type="checkbox"
+                  checked={useFormations}
+                  onChange={(e) => setUseFormations(e.target.checked)}
+                  className="w-4 h-4 rounded accent-primary"
+                />
+              </label>
+            )}
+            {pendingPlannedSubs && (
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-sm text-slate-300">Planned substitutions</span>
+                <input
+                  type="checkbox"
+                  checked={usePlannedSubs}
+                  onChange={(e) => setUsePlannedSubs(e.target.checked)}
+                  className="w-4 h-4 rounded accent-primary"
+                />
+              </label>
             )}
           </div>
         )}

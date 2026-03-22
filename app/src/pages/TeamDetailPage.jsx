@@ -14,6 +14,8 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { TabBar } from '../components/ui/Tab';
 import { LineupForm } from '../components/match/LineupForm';
+import { RotationFormationEditor } from '../components/match/RotationFormationEditor';
+import { PlannedSubsEditor } from '../components/match/PlannedSubsEditor';
 import { ROMAN } from '../components/court/CourtZonePicker';
 import { SwipeableMatchCard } from '../components/ui/SwipeableMatchCard';
 
@@ -787,6 +789,12 @@ export function TeamDetailPage() {
   const [showLineupModal, setShowLineupModal] = useState(false);
   const [editLineup, setEditLineup]           = useState(null);
   const [deleteLineup, setDeleteLineup]       = useState(null);
+  const [expandedLineupId,    setExpandedLineupId]    = useState(null);
+  const [expandedLineupTab,   setExpandedLineupTab]   = useState('formations'); // 'formations' | 'subs'
+  const [draftFormations,     setDraftFormations]     = useState(null); // { [rotNum]: number[6] | null }
+  const [draftPlannedSubs,    setDraftPlannedSubs]    = useState(null); // Array | null
+  const [expandedRotation,    setExpandedRotation]    = useState(1);
+  const [savingLineupConfig,  setSavingLineupConfig]  = useState(false);
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [addRecordType,   setAddRecordType]   = useState(null);
   const [editRecord,      setEditRecord]      = useState(null);
@@ -900,15 +908,75 @@ export function TeamDetailPage() {
               {savedLineups.map((sl) => {
                 const playerMap = Object.fromEntries(activePlayers.map((p) => [String(p.id), p]));
                 const libero = sl.libero_player_id ? playerMap[String(sl.libero_player_id)] : null;
+                const isExpanded = expandedLineupId === sl.id;
+                const hasFormations = sl.serve_receive_formations && Object.keys(sl.serve_receive_formations).length > 0;
+                const hasPlannedSubs = sl.planned_subs && sl.planned_subs.length > 0;
+
+                const openExpand = () => {
+                  setExpandedLineupId(sl.id);
+                  setExpandedLineupTab('formations');
+                  setExpandedRotation(1);
+                  setDraftFormations(sl.serve_receive_formations ? { ...sl.serve_receive_formations } : {});
+                  setDraftPlannedSubs(sl.planned_subs ? [...sl.planned_subs] : []);
+                };
+
+                const handleFormationChange = (rotNum, newFormation) => {
+                  setDraftFormations((prev) => {
+                    const next = { ...prev };
+                    if (newFormation === null) {
+                      delete next[rotNum];
+                    } else {
+                      next[rotNum] = newFormation;
+                    }
+                    return next;
+                  });
+                };
+
+                const handleSaveConfig = async () => {
+                  setSavingLineupConfig(true);
+                  try {
+                    const formations = draftFormations && Object.keys(draftFormations).length > 0 ? draftFormations : null;
+                    const planned    = draftPlannedSubs && draftPlannedSubs.length > 0 ? draftPlannedSubs : null;
+                    await db.saved_lineups.update(sl.id, {
+                      serve_receive_formations: formations,
+                      planned_subs:             planned,
+                    });
+                    setExpandedLineupId(null);
+                  } finally {
+                    setSavingLineupConfig(false);
+                  }
+                };
+
                 return (
                   <div key={sl.id} className="bg-surface rounded-xl px-4 py-3">
+                    {/* Card header */}
                     <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold">{sl.name}</span>
-                      <div className="flex gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-semibold truncate">{sl.name}</span>
+                        {hasFormations && (
+                          <span className="text-[9px] bg-blue-900/50 text-blue-300 border border-blue-700/50 rounded px-1.5 py-0.5 shrink-0">
+                            {Object.keys(sl.serve_receive_formations).length} formations
+                          </span>
+                        )}
+                        {hasPlannedSubs && (
+                          <span className="text-[9px] bg-emerald-900/50 text-emerald-300 border border-emerald-700/50 rounded px-1.5 py-0.5 shrink-0">
+                            {sl.planned_subs.length} subs
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-3 shrink-0">
                         <button onClick={() => setEditLineup(sl)} className="text-slate-400 hover:text-white text-sm">Edit</button>
                         <button onClick={() => setDeleteLineup(sl)} className="text-red-400 hover:text-red-300 text-sm">Delete</button>
+                        <button
+                          onClick={() => isExpanded ? setExpandedLineupId(null) : openExpand()}
+                          className="text-slate-400 hover:text-white text-sm"
+                        >
+                          {isExpanded ? '▲' : '▼'}
+                        </button>
                       </div>
                     </div>
+
+                    {/* Serve order rows */}
                     <div className="space-y-0.5">
                       {sl.serve_order.map((pid, i) => {
                         const p = playerMap[pid];
@@ -929,6 +997,93 @@ export function TeamDetailPage() {
                         </div>
                       )}
                     </div>
+
+                    {/* Expandable section */}
+                    {isExpanded && (
+                      <div className="mt-4 space-y-3 border-t border-slate-700 pt-3">
+                        {/* Sub-tabs */}
+                        <div className="flex gap-1">
+                          {['formations', 'subs'].map((t) => (
+                            <button
+                              key={t}
+                              onClick={() => setExpandedLineupTab(t)}
+                              className={`flex-1 py-1.5 rounded text-xs font-semibold border transition-colors
+                                ${expandedLineupTab === t
+                                  ? 'bg-primary text-white border-primary'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500'
+                                }`}
+                            >
+                              {t === 'formations' ? 'Serve Rec Formations' : 'Planned Subs'}
+                            </button>
+                          ))}
+                        </div>
+
+                        {expandedLineupTab === 'formations' && (
+                          <div className="space-y-3">
+                            {/* Rotation tab bar */}
+                            <div className="flex gap-1">
+                              {[1,2,3,4,5,6].map((r) => {
+                                const hasFmt = draftFormations && draftFormations[r];
+                                return (
+                                  <button
+                                    key={r}
+                                    onClick={() => setExpandedRotation(r)}
+                                    className={`flex-1 py-1 rounded text-xs font-bold border relative transition-colors
+                                      ${expandedRotation === r
+                                        ? 'bg-slate-600 text-white border-slate-500'
+                                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-500'
+                                      }`}
+                                  >
+                                    {r}
+                                    {hasFmt && (
+                                      <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <p className="text-[10px] text-slate-500">
+                              Drag players to set serve receive positions for Rotation {expandedRotation}.
+                            </p>
+                            <RotationFormationEditor
+                              key={`${sl.id}-${expandedRotation}`}
+                              rotationNum={expandedRotation}
+                              serveOrderIds={sl.serve_order.map(String)}
+                              players={activePlayers}
+                              formation={draftFormations?.[expandedRotation] ?? null}
+                              onChange={handleFormationChange}
+                            />
+                          </div>
+                        )}
+
+                        {expandedLineupTab === 'subs' && (
+                          <PlannedSubsEditor
+                            serveOrderIds={sl.serve_order.map(String)}
+                            players={activePlayers}
+                            liberoPlayerId={sl.libero_player_id ?? null}
+                            plannedSubs={draftPlannedSubs}
+                            onChange={setDraftPlannedSubs}
+                          />
+                        )}
+
+                        {/* Save / Cancel */}
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={() => setExpandedLineupId(null)}
+                            className="flex-1 py-2 rounded text-xs text-slate-400 border border-slate-700 hover:border-slate-500"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSaveConfig}
+                            disabled={savingLineupConfig}
+                            className="flex-1 py-2 rounded text-xs font-semibold bg-primary text-white disabled:opacity-50"
+                          >
+                            {savingLineupConfig ? 'Saving…' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}

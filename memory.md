@@ -303,6 +303,33 @@ Libero rule update: libero CAN serve (S1) — no position restriction
 
 **Key bug fixed:** `committedContacts` resets to `[]` on every `endSet()`, making `useMatchStats()` set-scoped only. Fixed by querying `db.contacts` directly by `match_id` for full-match record tracking.
 
+### 2026-03-19 — Serve Zone Integration & Test Fix
+
+**Review of uncommitted work (8 files, ~386 lines delta):**
+- `matchStore.js`: Added `pendingServeContact`, `serveReticles`, `confirmServeZone`, `dismissServeZoneModal`, `loadServeReticles` — full serve zone tracking pipeline
+- `LiveMatchPage.jsx`: Imports and mounts `ServeZoneModal`; loads `serveReticles` on init; `priorContacts` + `allMatchContacts` merge for cross-set record tracking
+- `LiveStatsModal.jsx`: Added `ServeZoneStatsPanel` (zone heatmap + table in SERVING tab), `OffenseBalanceChart` (stacked kill-share bar + TA bars + stats table, set/match scope toggle), `ISvsOOSTable` (IS/OOS/FREE dig/transition attack per rotation), full-match scope stats via `useLiveQuery`
+- `CourtGrid.jsx`: Added `KillBurst`, `KillFirework`, `KillBadge`, `AceCelebration`, `BlockHands`, `PerfectPassBadge` particle/celebration components
+- `engine.js`: Added `computeISvsOOS`, `computeFreeDigWin`, `computeTransitionAttack`, `computeRunsByRotation`, `computeFreeballOutcomes`, `computePointQuality`
+- `PlayerTile.jsx`: Serve row with FLOAT/TOP type selector + unlock mechanic; SE → OB/NET secondary picker; pass ring + ripple animations; heat-icon chips in live stats bar
+- `queries.js`: Complete — no new changes vs prior session
+- `uiStore.js`: No net changes
+- `ServeZoneModal.jsx` (new): SVG court tap-to-zone, 6-zone FIVB grid, pending/confirmed reticle overlays, SKIP/CONFIRM buttons
+
+**Test fix:**
+- `computeFreeballOutcomes` tests used `rally_id`/`id` join but engine uses `set_id + rally_number`
+- Updated 4 test cases to provide `set_id` + `rally_number` on contacts/rallies — 43/43 passing
+
+**Build:** Clean ✓ — 1011 modules, 476KB gzip
+
+### 2026-03-19 (continued)
+
+**IS/OOS full redefinition:**
+- Rewrote `computeISvsOOS` in `engine.js` — new definition: per rally, find the first offensive contact after the serve-receive pass (by timestamp). IS = pass rated 3, OOS = pass rated 1 or 2. First offensive contact = `action='attack'` or `action='set'` with `result='ball_handling_error'` (BHE/lift). Stats tracked: TA / K / AE / K% / HIT% / WIN% (where WIN% = rally wins / attacks in bucket). Ball-comes-back attacks are excluded because only the FIRST offensive contact per rally is counted. Return shape changed from `{is_pa, is_won, oos_pa, oos_won}` to `{is: {ta,k,ae,win,k_pct,hit_pct,win_pct}, oos: same}` per slot.
+- Updated `LiveStatsModal.jsx`: `EMPTY_ISVSOOS` updated to new shape; `ISvsOOSTable` rows now show IS ATK / IS K% / IS HIT% / IS WIN% + OOS ATK / OOS K% / OOS HIT% / OOS WIN%.
+- Updated `ReportsPage.jsx`: `ISOOS_COLS` now 9 columns (Rot + 4 IS + 4 OOS); `isOosRows` useMemo updated; IS/OOS summary box now shows 8 stats (IS ATK/Win%/K%/HIT% + OOS same).
+- All 43 tests passing ✓
+
 ## Weekly Summaries
 
 ## Monthly Summaries

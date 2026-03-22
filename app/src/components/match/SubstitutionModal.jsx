@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -26,6 +26,8 @@ export function SubstitutionModal({ onClose }) {
   const subPairs            = useMatchStore((s) => s.subPairs);
   const exhaustedPlayerIds  = useMatchStore((s) => s.exhaustedPlayerIds);
   const substitutePlayer    = useMatchStore((s) => s.substitutePlayer);
+  const plannedSubs         = useMatchStore((s) => s.plannedSubs);
+  const rotationNum         = useMatchStore((s) => s.rotationNum);
 
   const [outPlayerId,   setOutPlayerId]   = useState(null);
   const [inPlayerId,    setInPlayerId]    = useState(null);
@@ -40,6 +42,23 @@ export function SubstitutionModal({ onClose }) {
   const onCourtIds = new Set(lineup.map((sl) => sl.playerId).filter(Boolean));
   // Bench = active roster minus on-court players; libero handled separately
   const bench = (roster ?? []).filter((p) => !onCourtIds.has(p.id) && p.id !== liberoId);
+
+  // Planned sub shortcuts for the current rotation
+  const applicablePlannedSubs = useMemo(() => {
+    if (!plannedSubs?.length || !roster) return [];
+    return plannedSubs
+      .filter((ps) => ps.rotation === rotationNum)
+      .map((ps) => {
+        const outSlot = lineup.find((sl) => sl.serveOrder === ps.player_out_so + 1);
+        if (!outSlot?.playerId) return null;
+        if (exhaustedPlayerIds.includes(outSlot.playerId)) return null;
+        const inPlayer = roster.find((p) => p.id === ps.player_in_id);
+        if (!inPlayer || onCourtIds.has(inPlayer.id) || inPlayer.id === liberoId) return null;
+        if (exhaustedPlayerIds.includes(inPlayer.id)) return null;
+        return { outSlot, inPlayer };
+      })
+      .filter(Boolean);
+  }, [plannedSubs, rotationNum, lineup, exhaustedPlayerIds, roster, onCourtIds, liberoId]);
 
   // Clear bench selection when the court selection changes
   useEffect(() => {
@@ -85,6 +104,38 @@ export function SubstitutionModal({ onClose }) {
       }
     >
       <div className="space-y-4">
+
+        {/* ── Planned Sub Shortcuts ── */}
+        {applicablePlannedSubs.length > 0 && !atMax && (
+          <div>
+            <p className="text-xs text-slate-400 mb-1.5 font-semibold uppercase tracking-wide">
+              Planned Subs — Rotation {rotationNum}
+            </p>
+            <div className="space-y-1.5">
+              {applicablePlannedSubs.map(({ outSlot, inPlayer }, idx) => (
+                <button
+                  key={idx}
+                  onClick={async () => {
+                    const ok = await substitutePlayer(outSlot.playerId, inPlayer, undefined);
+                    if (ok) onClose();
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-900/30
+                    border border-emerald-700 hover:bg-emerald-900/50 text-left transition-colors"
+                >
+                  <span className="text-emerald-400 font-semibold text-xs shrink-0">OUT</span>
+                  <span className="text-white text-xs font-bold flex-1 truncate">
+                    #{outSlot.jersey} {outSlot.playerName}
+                  </span>
+                  <span className="text-slate-400 text-xs shrink-0">→</span>
+                  <span className="text-xs font-bold text-emerald-200 truncate">
+                    #{inPlayer.jersey_number} {inPlayer.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <hr className="border-slate-700 mt-3" />
+          </div>
+        )}
 
         {atMax && (
           <div className="px-3 py-2 rounded-lg bg-red-950 border border-red-700 text-red-300 text-xs font-semibold text-center">

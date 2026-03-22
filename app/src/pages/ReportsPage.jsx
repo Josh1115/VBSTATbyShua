@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { getIntStorage, STORAGE_KEYS } from '../utils/storage';
 import { db } from '../db/schema';
 import { computeSeasonStats } from '../stats/engine';
 import { fmtHitting, fmtPassRating, fmtPct, fmtCount, fmtVER } from '../stats/formatters';
@@ -14,11 +15,13 @@ import { HittingBarChart } from '../components/charts/HittingBarChart';
 import { RotationRadarChart } from '../components/charts/RotationRadarChart';
 import { SideoutPieChart } from '../components/charts/SideoutPieChart';
 import { CourtHeatMap } from '../components/charts/CourtHeatMap';
+import { PlayerTrendsChart } from '../components/charts/PlayerTrendsChart';
 
 const TABS = [
   { value: 'team',     label: 'Team Stats'        },
   { value: 'players',  label: 'Player Stats'       },
   { value: 'rotation', label: 'Rotation Analysis'  },
+  { value: 'trends',   label: 'Trends'             },
   { value: 'heatmap',  label: 'Heat Map'           },
 ];
 
@@ -27,12 +30,12 @@ const PLAYER_COLS = [
   { key: 'mp',        label: 'MP',    fmt: fmtCount     },
   { key: 'sp',        label: 'SP',    fmt: fmtCount     },
   { key: 'pos_label', label: 'POS',   fmt: (v) => v ?? '—' },
-  { key: 'pos_mult',  label: '×',     fmt: (v) => v != null ? `×${v.toFixed(2)}` : '—' },
   { key: 'ver',       label: 'VER',   fmt: fmtVER       },
   { key: 'sa',      label: 'SA',    fmt: fmtCount     },
+  { key: 'si_pct',  label: 'SRV%',  fmt: fmtPct       },
   { key: 'ace',     label: 'ACE',   fmt: fmtCount     },
   { key: 'ace_pct', label: 'ACE%',  fmt: fmtPct       },
-  { key: 'pa',      label: 'PA',    fmt: fmtCount     },
+  { key: 'pa',      label: 'REC',   fmt: fmtCount     },
   { key: 'apr',     label: 'APR',   fmt: fmtPassRating },
   { key: 'ta',      label: 'TA',    fmt: fmtCount     },
   { key: 'k',       label: 'K',     fmt: fmtCount     },
@@ -41,35 +44,50 @@ const PLAYER_COLS = [
   { key: 'dig',     label: 'DIG',   fmt: fmtCount     },
 ];
 
+// Each entry uses either `key` (looked up on stats.team) or `get(stats)` for derived/nested values.
 const TEAM_STATS = [
-  { label: 'Hitting%',  key: 'hit_pct',  fmt: fmtHitting    },
-  { label: 'ACE%',      key: 'ace_pct',  fmt: fmtPct        },
-  { label: 'Serves',    key: 'sa',       fmt: fmtCount      },
-  { label: 'Kills',     key: 'k',        fmt: fmtCount      },
-  { label: 'Assists',   key: 'ast',      fmt: fmtCount      },
-  { label: 'Pass Avg',  key: 'apr',      fmt: fmtPassRating },
-  { label: 'Digs',      key: 'dig',      fmt: fmtCount      },
-  { label: 'Blocks',    key: 'bs',       fmt: fmtCount      },
+  { label: 'Srv Att',    key: 'sa',      fmt: fmtCount      },
+  { label: 'Srv%',       key: 'si_pct',  fmt: fmtPct        },
+  { label: 'ACE%',       key: 'ace_pct', fmt: fmtPct        },
+  { label: 'Atk Att',    key: 'ta',      fmt: fmtCount      },
+  { label: 'Kills',      key: 'k',       fmt: fmtCount      },
+  { label: 'K%',         key: 'k_pct',   fmt: fmtPct        },
+  { label: 'Atk Errors', key: 'ae',      fmt: fmtCount      },
+  { label: 'Hit%',       key: 'hit_pct', fmt: fmtHitting    },
+  { label: 'Assists',    key: 'ast',     fmt: fmtCount      },
+  { label: 'BHE',        key: 'bhe',     fmt: fmtCount      },
+  { label: 'Blocks',     get: (s) => (s.team.bs ?? 0) + (s.team.ba ?? 0), fmt: fmtCount },
+  { label: 'Pass Avg',   key: 'apr',     fmt: fmtPassRating },
+  { label: 'Digs',       key: 'dig',     fmt: fmtCount      },
+  { label: 'Earned Pts', get: (s) => s.pointQuality?.earned?.total,        fmt: fmtCount },
+  { label: 'Free Pts',   get: (s) => s.pointQuality?.free?.total,          fmt: fmtCount },
+  { label: 'Given Pts',  get: (s) => s.pointQuality?.given?.total,         fmt: fmtCount },
 ];
 
 // IS/OOS per-rotation table columns
 const ISOOS_COLS = [
-  { key: 'name',        label: 'Rot'     },
-  { key: 'is_pa',       label: 'IS',      fmt: fmtCount },
-  { key: 'is_win_pct',  label: 'IS Win%', fmt: fmtPct   },
-  { key: 'oos_pa',      label: 'OOS',     fmt: fmtCount },
-  { key: 'oos_win_pct', label: 'OOS Win%',fmt: fmtPct   },
+  { key: 'name',        label: 'Rot'       },
+  { key: 'is_ta',       label: 'IS',        fmt: fmtCount   },
+  { key: 'is_k_pct',    label: 'IS K%',     fmt: fmtPct     },
+  { key: 'is_hit_pct',  label: 'IS HIT%',   fmt: fmtHitting },
+  { key: 'is_win_pct',  label: 'IS Win%',   fmt: fmtPct     },
+  { key: 'oos_ta',      label: 'OOS',       fmt: fmtCount   },
+  { key: 'oos_k_pct',   label: 'OOS K%',    fmt: fmtPct     },
+  { key: 'oos_hit_pct', label: 'OOS HIT%',  fmt: fmtHitting },
+  { key: 'oos_win_pct', label: 'OOS Win%',  fmt: fmtPct     },
 ];
 
 // Transition/free-ball per-rotation table columns
 const TRANS_COLS = [
   { key: 'name',          label: 'Rot'       },
   { key: 'free_ta',       label: 'FB ATK',   fmt: fmtCount   },
-  { key: 'free_hit_pct',  label: 'FB HIT%',  fmt: fmtHitting },
   { key: 'free_k_pct',    label: 'FB K%',    fmt: fmtPct     },
+  { key: 'free_hit_pct',  label: 'FB HIT%',  fmt: fmtHitting },
+  { key: 'free_win_pct',  label: 'FB Win%',  fmt: fmtPct     },
   { key: 'trans_ta',      label: 'TR ATK',   fmt: fmtCount   },
-  { key: 'trans_hit_pct', label: 'TR HIT%',  fmt: fmtHitting },
   { key: 'trans_k_pct',   label: 'TR K%',    fmt: fmtPct     },
+  { key: 'trans_hit_pct', label: 'TR HIT%',  fmt: fmtHitting },
+  { key: 'trans_win_pct', label: 'TR Win%',  fmt: fmtPct     },
 ];
 
 const fmtAvg = (val) => val == null ? '—' : val.toFixed(1);
@@ -133,8 +151,8 @@ const chipClass = (active) =>
 
 export function ReportsPage() {
   const [tab, setTab] = useState('team');
-  const [selectedTeamId, setSelectedTeamId] = useState('');
-  const [selectedSeasonId, setSelectedSeasonId] = useState('');
+  const [selectedTeamId,   setSelectedTeamId]   = useState(() => getIntStorage(STORAGE_KEYS.DEFAULT_TEAM_ID,   null) ?? '');
+  const [selectedSeasonId, setSelectedSeasonId] = useState(() => getIntStorage(STORAGE_KEYS.DEFAULT_SEASON_ID, null) ?? '');
   const [selectedMatchIds, setSelectedMatchIds] = useState(null); // null = all matches
   const [conference, setConference] = useState('');
   const [location,   setLocation]   = useState('');
@@ -142,6 +160,8 @@ export function ReportsPage() {
   const [stats, setStats] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [showAllMatches, setShowAllMatches] = useState(false);
+  const statsDebounceRef = useRef(null);
 
   // Filter data
   const teams   = useLiveQuery(() => db.teams.toArray(), []);
@@ -167,7 +187,10 @@ export function ReportsPage() {
       : Promise.resolve([]),
     [selectedTeamId]
   );
-  const playerNames = Object.fromEntries((players ?? []).map(p => [p.id, p.name]));
+  const playerNames = useMemo(
+    () => Object.fromEntries((players ?? []).map(p => [p.id, p.name])),
+    [players]
+  );
 
   // Reset everything when team changes
   function handleTeamChange(e) {
@@ -213,14 +236,19 @@ export function ReportsPage() {
     return `${d.getMonth() + 1}/${d.getDate()}`;
   };
 
-  // Load season stats when season, match selection, or chip filters change
+  // Load season stats when season, match selection, or chip filters change.
+  // Debounced 150ms so rapid filter taps don't fire multiple expensive scans.
   useEffect(() => {
     if (!selectedSeasonId) return;
-    setLoading(true);
-    computeSeasonStats(Number(selectedSeasonId), activeFilters)
-      .then((s) => { setStats(s); setContacts(s?.contacts ?? []); })
-      .finally(() => setLoading(false));
-  }, [selectedSeasonId, selectedMatchIds, conference, location, matchType]);
+    clearTimeout(statsDebounceRef.current);
+    statsDebounceRef.current = setTimeout(() => {
+      setLoading(true);
+      computeSeasonStats(Number(selectedSeasonId), activeFilters)
+        .then((s) => { setStats(s); setContacts(s?.contacts ?? []); })
+        .finally(() => setLoading(false));
+    }, 150);
+    return () => clearTimeout(statsDebounceRef.current);
+  }, [selectedSeasonId, selectedMatchIds, conference, location, matchType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const playerRows = useMemo(() =>
     stats
@@ -255,11 +283,15 @@ export function ReportsPage() {
     const { byRotation, total } = stats.isOos;
     const toRow = (rot, label, d) => ({
       rot,
-      name: label,
-      is_pa:       d.is_pa,
-      is_win_pct:  d.is_pa  > 0 ? d.is_won  / d.is_pa  : null,
-      oos_pa:      d.oos_pa,
-      oos_win_pct: d.oos_pa > 0 ? d.oos_won / d.oos_pa : null,
+      name:        label,
+      is_ta:       d.is.ta,
+      is_k_pct:    d.is.k_pct,
+      is_hit_pct:  d.is.hit_pct,
+      is_win_pct:  d.is.win_pct,
+      oos_ta:      d.oos.ta,
+      oos_k_pct:   d.oos.k_pct,
+      oos_hit_pct: d.oos.hit_pct,
+      oos_win_pct: d.oos.win_pct,
     });
     return [
       ...Object.entries(byRotation).map(([r, d]) => toRow(r, `R${r}`, d)),
@@ -275,11 +307,13 @@ export function ReportsPage() {
       rot,
       name:          label,
       free_ta:       f.ta,
-      free_hit_pct:  f.hit_pct,
       free_k_pct:    f.k_pct,
+      free_hit_pct:  f.hit_pct,
+      free_win_pct:  f.win_pct,
       trans_ta:      t.ta,
-      trans_hit_pct: t.hit_pct,
       trans_k_pct:   t.k_pct,
+      trans_hit_pct: t.hit_pct,
+      trans_win_pct: t.win_pct,
     });
     const rows = [];
     for (let r = 1; r <= 6; r++) {
@@ -336,28 +370,42 @@ export function ReportsPage() {
       </div>
 
       {/* Match picker — individual match chips, shown once a season is selected */}
-      {selectedSeasonId && (seasonMatches ?? []).length > 0 && (
-        <div className="px-4 pb-2">
-          <div className="flex gap-1.5 items-center overflow-x-auto pb-1 no-scrollbar">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0 mr-1">Match</span>
-            <button
-              onClick={() => setSelectedMatchIds(null)}
-              className={chipClass(!selectedMatchIds?.length) + ' shrink-0'}
-            >
-              All
-            </button>
-            {(seasonMatches ?? []).map(m => (
+      {selectedSeasonId && (seasonMatches ?? []).length > 0 && (() => {
+        const all = seasonMatches ?? [];
+        const SHOW = 8;
+        const visible = showAllMatches ? all : all.slice(0, SHOW);
+        const hasMore = all.length > SHOW;
+        return (
+          <div className="px-4 pb-2">
+            <div className="flex gap-1.5 items-center flex-wrap pb-1">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0 mr-1">Match</span>
               <button
-                key={m.id}
-                onClick={() => toggleMatch(m.id)}
-                className={chipClass(selectedMatchIds?.includes(m.id)) + ' shrink-0'}
+                onClick={() => setSelectedMatchIds(null)}
+                className={chipClass(!selectedMatchIds?.length) + ' shrink-0'}
               >
-                {m.opponent_name || 'Opp'}{m.date ? ` · ${fmtShortDate(m.date)}` : ''}
+                All
               </button>
-            ))}
+              {visible.map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => toggleMatch(m.id)}
+                  className={chipClass(selectedMatchIds?.includes(m.id)) + ' shrink-0'}
+                >
+                  {m.opponent_name || 'Opp'}{m.date ? ` · ${fmtShortDate(m.date)}` : ''}
+                </button>
+              ))}
+              {hasMore && (
+                <button
+                  onClick={() => setShowAllMatches((v) => !v)}
+                  className="text-[11px] text-primary font-semibold shrink-0 px-1"
+                >
+                  {showAllMatches ? 'Show less' : `+${all.length - SHOW} more`}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Conf / site / type chip filters — hidden when specific matches are selected */}
       {selectedSeasonId && showChipFilters && (
@@ -369,7 +417,7 @@ export function ReportsPage() {
             ))}
           </div>
           <div className="flex gap-1.5 flex-wrap items-center">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Site</span>
+            <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Location</span>
             {[['', 'All'], ['home', 'Home'], ['away', 'Away'], ['neutral', 'Neutral']].map(([val, label]) => (
               <button key={val} onClick={() => setLocation(val)} className={chipClass(location === val)}>{label}</button>
             ))}
@@ -450,25 +498,31 @@ export function ReportsPage() {
             {tab === 'team' && (
               <>
                 {/* Stat grid */}
-                <div className="grid grid-cols-2 gap-3">
-                  {TEAM_STATS.map(({ label, key, fmt }) => (
-                    <div key={key} className="bg-surface rounded-xl p-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {TEAM_STATS.map(({ label, key, get: getVal, fmt }) => (
+                    <div key={label} className="bg-surface rounded-xl p-3">
                       <div className="text-xs text-slate-400">{label}</div>
-                      <div className="text-xl font-bold text-primary mt-0.5">{fmt(stats.team[key])}</div>
+                      <div className="text-xl font-bold text-primary mt-0.5">
+                        {fmt(key ? stats.team[key] : getVal(stats))}
+                      </div>
                     </div>
                   ))}
                 </div>
 
                 {/* In System vs Out of System */}
-                {stats.isOos && (stats.isOos.total.is_pa > 0 || stats.isOos.total.oos_pa > 0) && (
+                {stats.isOos && (stats.isOos.total.is.ta > 0 || stats.isOos.total.oos.ta > 0) && (
                   <div className="bg-surface rounded-xl p-3 space-y-2">
                     <SectionHeader>In System vs Out of System</SectionHeader>
                     <div className="grid grid-cols-2 gap-3">
                       {[
-                        { label: 'IS Passes',  val: fmtCount(stats.isOos.total.is_pa)  },
-                        { label: 'IS Win%',    val: fmtPct(stats.isOos.total.is_pa  > 0 ? stats.isOos.total.is_won  / stats.isOos.total.is_pa  : null) },
-                        { label: 'OOS Passes', val: fmtCount(stats.isOos.total.oos_pa) },
-                        { label: 'OOS Win%',   val: fmtPct(stats.isOos.total.oos_pa > 0 ? stats.isOos.total.oos_won / stats.isOos.total.oos_pa : null) },
+                        { label: 'IS ATK',   val: fmtCount(stats.isOos.total.is.ta)                  },
+                        { label: 'IS Win%',  val: fmtPct(stats.isOos.total.is.win_pct)               },
+                        { label: 'IS K%',    val: fmtPct(stats.isOos.total.is.k_pct)                 },
+                        { label: 'IS HIT%',  val: fmtHitting(stats.isOos.total.is.hit_pct)           },
+                        { label: 'OOS ATK',  val: fmtCount(stats.isOos.total.oos.ta)                 },
+                        { label: 'OOS Win%', val: fmtPct(stats.isOos.total.oos.win_pct)              },
+                        { label: 'OOS K%',   val: fmtPct(stats.isOos.total.oos.k_pct)               },
+                        { label: 'OOS HIT%', val: fmtHitting(stats.isOos.total.oos.hit_pct)         },
                       ].map(({ label, val }) => (
                         <div key={label}>
                           <div className="text-xs text-slate-400">{label}</div>
@@ -485,10 +539,14 @@ export function ReportsPage() {
                     <SectionHeader>Transition &amp; Free Ball Offense</SectionHeader>
                     <div className="grid grid-cols-2 gap-3">
                       {[
-                        { label: 'FB Attacks',  val: fmtCount(stats.transitionAttack.free.total.ta)       },
-                        { label: 'FB Hit%',     val: fmtHitting(stats.transitionAttack.free.total.hit_pct) },
-                        { label: 'Trans Attacks',val: fmtCount(stats.transitionAttack.transition.total.ta)       },
-                        { label: 'Trans Hit%',  val: fmtHitting(stats.transitionAttack.transition.total.hit_pct) },
+                        { label: 'FB ATK',    val: fmtCount(stats.transitionAttack.free.total.ta)            },
+                        { label: 'FB Win%',   val: fmtPct(stats.transitionAttack.free.total.win_pct)         },
+                        { label: 'FB K%',     val: fmtPct(stats.transitionAttack.free.total.k_pct)           },
+                        { label: 'FB HIT%',   val: fmtHitting(stats.transitionAttack.free.total.hit_pct)     },
+                        { label: 'TR ATK',    val: fmtCount(stats.transitionAttack.transition.total.ta)       },
+                        { label: 'TR Win%',   val: fmtPct(stats.transitionAttack.transition.total.win_pct)   },
+                        { label: 'TR K%',     val: fmtPct(stats.transitionAttack.transition.total.k_pct)     },
+                        { label: 'TR HIT%',   val: fmtHitting(stats.transitionAttack.transition.total.hit_pct) },
                       ].map(({ label, val }) => (
                         <div key={label}>
                           <div className="text-xs text-slate-400">{label}</div>
@@ -550,6 +608,20 @@ export function ReportsPage() {
                   </div>
                 )}
               </>
+            )}
+
+            {/* ── Trends ───────────────────────────────────────────────── */}
+            {tab === 'trends' && (
+              <div className="bg-surface rounded-xl p-4">
+                <SectionHeader>Player Trends by Match</SectionHeader>
+                {(stats.trends?.matches.length ?? 0) < 2 ? (
+                  <p className="text-sm text-slate-500 text-center py-6">
+                    Record at least 2 matches to see trends.
+                  </p>
+                ) : (
+                  <PlayerTrendsChart trends={stats.trends} playerNames={playerNames} />
+                )}
+              </div>
             )}
 
             {/* ── Heat Map ─────────────────────────────────────────────── */}

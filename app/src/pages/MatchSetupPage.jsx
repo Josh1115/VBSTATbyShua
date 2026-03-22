@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { getStorageItem, getIntStorage, STORAGE_KEYS } from '../utils/storage';
+import { useUiStore, selectShowToast } from '../store/uiStore';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
@@ -11,6 +13,7 @@ import { LineupForm } from '../components/match/LineupForm';
 
 export function MatchSetupPage() {
   const navigate   = useNavigate();
+  const showToast  = useUiStore(selectShowToast);
   const resetMatch = useMatchStore((s) => s.resetMatch);
   const [searchParams] = useSearchParams();
 
@@ -23,9 +26,10 @@ export function MatchSetupPage() {
   const [location,      setLocation]      = useState('home');
   const [matchType,     setMatchType]     = useState('reg-season');
   const [format,    setFormat]    = useState(() => {
-    const saved = localStorage.getItem('vbstat_default_format');
+    const saved = getStorageItem(STORAGE_KEYS.DEFAULT_FORMAT);
     return saved === FORMAT.BEST_OF_5 ? FORMAT.BEST_OF_5 : FORMAT.BEST_OF_3;
   });
+  const [lastSetScore, setLastSetScore] = useState(() => getIntStorage(STORAGE_KEYS.LAST_SET_SCORE, 15));
   // lineup[i] = playerId for serve order i+1 (I=0 … VI=5)
   const [lineup,         setLineupState]    = useState(Array(6).fill(''));
   // slotPositions[i] = position label override for serve slot i (e.g. 'OH', 'MB')
@@ -111,29 +115,31 @@ export function MatchSetupPage() {
       let effectiveMatchId;
       if (scheduledMatchId) {
         await db.matches.update(scheduledMatchId, {
-          opponent_id:   oppRecord.id,
-          opponent_name: oppRecord.name,
-          opponent_abbr: opponentAbbr.trim().toUpperCase() || null,
-          status:        MATCH_STATUS.IN_PROGRESS,
+          opponent_id:    oppRecord.id,
+          opponent_name:  oppRecord.name,
+          opponent_abbr:  opponentAbbr.trim().toUpperCase() || null,
+          status:         MATCH_STATUS.IN_PROGRESS,
           format,
+          last_set_score: lastSetScore,
           location,
           conference,
-          match_type:    matchType,
-          date:          new Date().toISOString(),
+          match_type:     matchType,
+          date:           new Date().toISOString(),
         });
         effectiveMatchId = scheduledMatchId;
       } else {
         effectiveMatchId = await db.matches.add({
-          season_id:     Number(seasonId),
-          opponent_id:   oppRecord.id,
-          opponent_name: oppRecord.name,
-          opponent_abbr: opponentAbbr.trim().toUpperCase() || null,
-          status:        MATCH_STATUS.IN_PROGRESS,
+          season_id:      Number(seasonId),
+          opponent_id:    oppRecord.id,
+          opponent_name:  oppRecord.name,
+          opponent_abbr:  opponentAbbr.trim().toUpperCase() || null,
+          status:         MATCH_STATUS.IN_PROGRESS,
           format,
+          last_set_score: lastSetScore,
           location,
           conference,
-          match_type:    matchType,
-          date:          new Date().toISOString(),
+          match_type:     matchType,
+          date:           new Date().toISOString(),
         });
       }
 
@@ -160,8 +166,8 @@ export function MatchSetupPage() {
 
       navigate(`/matches/${effectiveMatchId}/live`);
     } catch (e) {
+      showToast('Failed to create match. Try again.', 'error');
       setError('Failed to create match. Try again.');
-      console.error(e);
     } finally {
       setSaving(false);
     }

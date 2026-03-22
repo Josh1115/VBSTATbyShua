@@ -143,9 +143,9 @@ describe('computePlayerStats', () => {
 
   it('accumulates block stats', () => {
     const contacts = [
-      contact({ action: 'block', result: 'solo' }),
-      contact({ action: 'block', result: 'assist' }),
-      contact({ action: 'block', result: 'error' }),
+      contact({ action: 'block', result: 'solo',   set_id: 1 }),
+      contact({ action: 'block', result: 'assist', set_id: 2 }),
+      contact({ action: 'block', result: 'error',  set_id: 1 }),
     ];
     const { p1 } = computePlayerStats(contacts, 2);
     expect(p1.bs).toBe(1);
@@ -157,9 +157,9 @@ describe('computePlayerStats', () => {
 
   it('accumulates dig stats', () => {
     const contacts = [
-      contact({ action: 'dig', result: 'success' }),
-      contact({ action: 'dig', result: 'success' }),
-      contact({ action: 'dig', result: 'error' }),
+      contact({ action: 'dig', result: 'success', set_id: 1 }),
+      contact({ action: 'dig', result: 'success', set_id: 2 }),
+      contact({ action: 'dig', result: 'error',   set_id: 1 }),
     ];
     const { p1 } = computePlayerStats(contacts, 2);
     expect(p1.dig).toBe(2);
@@ -170,9 +170,9 @@ describe('computePlayerStats', () => {
 
   it('accumulates set stats', () => {
     const contacts = [
-      contact({ action: 'set', result: 'assist' }),
-      contact({ action: 'set', result: 'assist' }),
-      contact({ action: 'set', result: 'ball_handling_error' }),
+      contact({ action: 'set', result: 'assist',             set_id: 1 }),
+      contact({ action: 'set', result: 'assist',             set_id: 2 }),
+      contact({ action: 'set', result: 'ball_handling_error', set_id: 1 }),
     ];
     const { p1 } = computePlayerStats(contacts, 2);
     expect(p1.ast).toBe(2);
@@ -283,14 +283,14 @@ describe('computeFreeballOutcomes', () => {
 
   it('computes FBO% — freeball receive win rate', () => {
     const rallies = [
-      rally({ id: 1, point_winner: 'us' }),
-      rally({ id: 2, point_winner: 'us' }),
-      rally({ id: 3, point_winner: 'them' }),
+      rally({ set_id: 1, rally_number: 1, point_winner: 'us' }),
+      rally({ set_id: 1, rally_number: 2, point_winner: 'us' }),
+      rally({ set_id: 1, rally_number: 3, point_winner: 'them' }),
     ];
     const contacts = [
-      contact({ action: 'freeball_receive', rally_id: 1 }),
-      contact({ action: 'freeball_receive', rally_id: 2 }),
-      contact({ action: 'freeball_receive', rally_id: 3 }),
+      contact({ action: 'freeball_receive', set_id: 1, rally_number: 1 }),
+      contact({ action: 'freeball_receive', set_id: 1, rally_number: 2 }),
+      contact({ action: 'freeball_receive', set_id: 1, rally_number: 3 }),
     ];
     const result = computeFreeballOutcomes(contacts, rallies);
     expect(result.fbr).toBe(3);
@@ -300,12 +300,12 @@ describe('computeFreeballOutcomes', () => {
 
   it('computes FBD% — freeball send win rate', () => {
     const rallies = [
-      rally({ id: 10, point_winner: 'us' }),
-      rally({ id: 11, point_winner: 'them' }),
+      rally({ set_id: 1, rally_number: 10, point_winner: 'us' }),
+      rally({ set_id: 1, rally_number: 11, point_winner: 'them' }),
     ];
     const contacts = [
-      contact({ action: 'freeball_send', rally_id: 10 }),
-      contact({ action: 'freeball_send', rally_id: 11 }),
+      contact({ action: 'freeball_send', set_id: 1, rally_number: 10 }),
+      contact({ action: 'freeball_send', set_id: 1, rally_number: 11 }),
     ];
     const result = computeFreeballOutcomes(contacts, rallies);
     expect(result.fbs).toBe(2);
@@ -313,9 +313,9 @@ describe('computeFreeballOutcomes', () => {
   });
 
   it('skips opponent contacts', () => {
-    const rallies = [rally({ id: 1, point_winner: 'us' })];
+    const rallies = [rally({ set_id: 1, rally_number: 1, point_winner: 'us' })];
     const contacts = [
-      contact({ action: 'freeball_receive', rally_id: 1, opponent_contact: true }),
+      contact({ action: 'freeball_receive', set_id: 1, rally_number: 1, opponent_contact: true }),
     ];
     const result = computeFreeballOutcomes(contacts, rallies);
     expect(result.fbr).toBe(0);
@@ -324,10 +324,10 @@ describe('computeFreeballOutcomes', () => {
 
   it('skips contacts with no matching rally', () => {
     const contacts = [
-      contact({ action: 'freeball_receive', rally_id: 999 }),
+      contact({ action: 'freeball_receive', set_id: 1, rally_number: 999 }),
     ];
     const result = computeFreeballOutcomes(contacts, []);
-    // rally_id 999 not in rallies map — not counted
+    // no matching rally in map — not counted
     expect(result.fbr).toBe(0);
   });
 });

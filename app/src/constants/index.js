@@ -38,13 +38,16 @@ export const SERVE_TYPE = {
 
 // Contact action types
 export const ACTION = {
-  SERVE:            'serve',
-  PASS:             'pass',
-  SET:              'set',
-  ATTACK:           'attack',
-  BLOCK:            'block',
-  DIG:              'dig',
-  ERROR:            'error',
+  SERVE:             'serve',
+  PASS:              'pass',
+  SET:               'set',
+  ATTACK:            'attack',
+  BLOCK:             'block',
+  DIG:               'dig',
+  FREEBALL_RECEIVE:  'freeball_receive',
+  FREEBALL_SEND:     'freeball_send',
+  COVER:             'cover',
+  ERROR:             'error',
 };
 
 // Contact results by action
@@ -59,7 +62,7 @@ export const RESULT = {
   // attack
   KILL:                'kill',
   ATTEMPT:             'attempt',
-  // block
+  // block — note: stored value 'assist' is disambiguated at query time via action='block'
   SOLO:                'solo',
   BLOCK_ASSIST:        'assist',
   // dig
@@ -92,6 +95,8 @@ export const TRACKABLE_STATS = [
 ];
 
 // NFHS rules
+// MAX_SUBS_PER_SET: intentionally 18 (club/college rules) rather than NFHS's 12.
+// Overridable via localStorage key 'vbstat_max_subs'. Change to 12 for strict NFHS play.
 export const NFHS = {
   MAX_SUBS_PER_SET:     18,
   MAX_TIMEOUTS_PER_SET:  2,

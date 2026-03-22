@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/schema';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { useUiStore, selectShowToast } from '../../store/uiStore';
 import { fmtDateShort, calcAPR } from '../../stats/formatters';
+import { getIntStorage, setStorageItem, STORAGE_KEYS } from '../../utils/storage';
 
 const RATING_BG = {
   0: 'bg-red-600 active:brightness-75',
@@ -12,14 +13,21 @@ const RATING_BG = {
   3: 'bg-emerald-500 active:brightness-75',
 };
 
+const DRAFT_KEY = 'vbstat_draft_serve_receive';
+
+function readDraft() {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { return null; }
+}
+
 // ─── Setup screen ────────────────────────────────────────────────────────────
 
-function SetupView({ onStart }) {
-  const [teamId, setTeamId]     = useState(() => {
-    const saved = parseInt(localStorage.getItem('vbstat_default_team_id'), 10);
+function SetupView({ onStart, onResume, onDiscardDraft }) {
+  const [teamId, setTeamId]   = useState(() => {
+    const saved = getIntStorage(STORAGE_KEYS.DEFAULT_TEAM_ID);
     return !isNaN(saved) ? saved : null;
   });
-  const [checked, setChecked]   = useState(new Set());
+  const [checked, setChecked] = useState(new Set());
+  const [draft]               = useState(readDraft);
 
   const teams   = useLiveQuery(() => db.teams.orderBy('name').toArray(), []);
   const players = useLiveQuery(
@@ -48,6 +56,22 @@ function SetupView({ onStart }) {
 
   return (
     <div className="p-4 space-y-4">
+      {/* Resume draft banner */}
+      {draft && (
+        <div className="bg-orange-900/40 border border-orange-700 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-orange-200">Resume unsaved session?</p>
+            <p className="text-xs text-orange-300/70 mt-0.5">
+              {draft.players?.length ?? 0} players · {draft.players?.reduce((s, p) => s + (p.passes?.length ?? 0), 0) ?? 0} passes
+            </p>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button onClick={onDiscardDraft} className="text-xs text-slate-400 font-semibold px-2 py-1">Discard</button>
+            <button onClick={() => onResume(draft)} className="text-xs bg-orange-600 text-white font-bold rounded-lg px-3 py-1.5">Resume</button>
+          </div>
+        </div>
+      )}
+
       {/* Team picker */}
       <div className="bg-surface rounded-xl p-4 space-y-2">
         <label className="text-xs text-slate-400 uppercase tracking-wide font-semibold block">Team</label>
@@ -137,10 +161,20 @@ function SetupView({ onStart }) {
 
 function SessionView({ players: initPlayers, teamId }) {
   const [players, setPlayers] = useState(() =>
-    initPlayers.map((p) => ({ id: p.id, name: p.name, jersey: p.jersey_number, passes: [] }))
+    initPlayers.map((p) => ({
+      id: p.id,
+      name: p.name,
+      jersey: p.jersey_number ?? p.jersey,
+      passes: p.passes ?? [],
+    }))
   );
-  const [history, setHistory] = useState([]); // [{ playerId, rating }]
+  const [history, setHistory] = useState([]);
   const showToast = useUiStore(selectShowToast);
+
+  // Auto-save draft on every change
+  useEffect(() => {
+    setStorageItem(DRAFT_KEY, JSON.stringify({ players, teamId }));
+  }, [players, teamId]);
 
   function record(playerId, rating) {
     setPlayers((ps) => ps.map((p) => p.id === playerId ? { ...p, passes: [...p.passes, rating] } : p));
@@ -167,6 +201,7 @@ function SessionView({ players: initPlayers, teamId }) {
         totalPasses,
       },
     });
+    setStorageItem(DRAFT_KEY, null);
     showToast('Session saved', 'success');
   }
 
@@ -243,6 +278,15 @@ function SessionView({ players: initPlayers, teamId }) {
 export function ServeReceivePage() {
   const [session, setSession] = useState(null); // null | { players, teamId }
 
+  function handleResume(draft) {
+    setSession({ players: draft.players ?? [], teamId: draft.teamId });
+  }
+
+  function handleReset() {
+    setSession(null);
+    setStorageItem(DRAFT_KEY, null);
+  }
+
   return (
     <div>
       <PageHeader
@@ -250,10 +294,7 @@ export function ServeReceivePage() {
         backTo={session ? null : '/tools'}
         action={
           session && (
-            <button
-              onClick={() => setSession(null)}
-              className="text-sm text-red-400 font-semibold px-2 py-1"
-            >
+            <button onClick={handleReset} className="text-sm text-red-400 font-semibold px-2 py-1">
               Reset
             </button>
           )
@@ -261,7 +302,7 @@ export function ServeReceivePage() {
       />
       {session
         ? <SessionView players={session.players} teamId={session.teamId} />
-        : <SetupView onStart={setSession} />
+        : <SetupView onStart={setSession} onResume={handleResume} onDiscardDraft={() => setStorageItem(DRAFT_KEY, null)} />
       }
     </div>
   );

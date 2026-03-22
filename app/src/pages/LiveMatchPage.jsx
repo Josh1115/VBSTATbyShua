@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { db } from '../db/schema';
 import { useMatchStore } from '../store/matchStore';
+import { useUiStore } from '../store/uiStore';
+import { useShallow } from 'zustand/react/shallow';
 import { computePlayerStats, computeTeamStats } from '../stats/engine';
 import { SET_STATUS, FORMAT, SIDE, MATCH_STATUS } from '../constants';
 import { useMatchStats } from '../hooks/useMatchStats';
 import { useRecordAlerts } from '../hooks/useRecordAlerts';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { haptic } from '../utils/haptic';
+import { STORAGE_KEYS } from '../utils/storage';
 import { ScoreHeader } from '../components/match/ScoreHeader';
 import { CourtGrid } from '../components/court/CourtGrid';
 import { ActionBar } from '../components/match/ActionBar';
@@ -23,10 +26,14 @@ import { OppScoringColumn } from '../components/match/OppScoringColumn';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Confetti } from '../components/ui/Confetti';
 import { SetSummaryModal } from '../components/match/SetSummaryModal';
+import { ServeZoneModal } from '../components/match/ServeZoneModal';
 
 export function LiveMatchPage() {
   const { matchId: matchIdParam } = useParams();
-  const navigate = useNavigate();
+  const navigate       = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isRevising     = searchParams.get('revise') === '1';
+  const revisingSetId  = searchParams.get('setId') ? parseInt(searchParams.get('setId'), 10) : null;
   const [ready,        setReady]        = useState(false);
   const [screenH,      setScreenH]      = useState(() => window.innerHeight);
   const [subOpen,      setSubOpen]      = useState(false);
@@ -45,40 +52,73 @@ export function LiveMatchPage() {
   const [opponentName,        setOpponentName]        = useState('');
   const [liveStatsDefaultTab, setLiveStatsDefaultTab] = useState(null);
 
-  const setMatch            = useMatchStore((s) => s.setMatch);
-  const setLineup           = useMatchStore((s) => s.setLineup);
-  const setPlayerNicknames  = useMatchStore((s) => s.setPlayerNicknames);
-  const setLibero           = useMatchStore((s) => s.setLibero);
-  const swapLibero          = useMatchStore((s) => s.swapLibero);
-  const endSet              = useMatchStore((s) => s.endSet);
-  const endMatch            = useMatchStore((s) => s.endMatch);
-  const clearPendingSetWin  = useMatchStore((s) => s.clearPendingSetWin);
-  const pendingSetWin       = useMatchStore((s) => s.pendingSetWin);
-  const ourScore            = useMatchStore((s) => s.ourScore);
-  const oppScore            = useMatchStore((s) => s.oppScore);
-  const ourSetsWon          = useMatchStore((s) => s.ourSetsWon);
-  const oppSetsWon          = useMatchStore((s) => s.oppSetsWon);
-  const format              = useMatchStore((s) => s.format);
-
-  const teamId       = useMatchStore((s) => s.teamId);
-  const lineup       = useMatchStore((s) => s.lineup);
-  const setNumber    = useMatchStore((s) => s.setNumber);
-  const pointHistory = useMatchStore((s) => s.pointHistory);
-  const currentRun   = useMatchStore((s) => s.currentRun);
+  const {
+    setMatch, setLineup, setPlayerNicknames, setLibero, swapLibero,
+    endSet, endMatch, finishRevisedSet, clearPendingSetWin,
+    confirmServeZone, dismissServeZoneModal, loadServeReticles, loadSetFormationData,
+    pendingSetWin, ourScore, oppScore, ourSetsWon, oppSetsWon, format,
+    pendingServeContact, serveReticles,
+    teamId, lineup, setNumber, pointHistory, currentRun,
+  } = useMatchStore(useShallow((s) => ({
+    setMatch:             s.setMatch,
+    setLineup:            s.setLineup,
+    setPlayerNicknames:   s.setPlayerNicknames,
+    setLibero:            s.setLibero,
+    swapLibero:           s.swapLibero,
+    endSet:               s.endSet,
+    endMatch:             s.endMatch,
+    finishRevisedSet:     s.finishRevisedSet,
+    clearPendingSetWin:   s.clearPendingSetWin,
+    confirmServeZone:     s.confirmServeZone,
+    dismissServeZoneModal: s.dismissServeZoneModal,
+    loadServeReticles:    s.loadServeReticles,
+    loadSetFormationData: s.loadSetFormationData,
+    pendingSetWin:        s.pendingSetWin,
+    ourScore:             s.ourScore,
+    oppScore:             s.oppScore,
+    ourSetsWon:           s.ourSetsWon,
+    oppSetsWon:           s.oppSetsWon,
+    format:               s.format,
+    pendingServeContact:  s.pendingServeContact,
+    serveReticles:        s.serveReticles,
+    teamId:               s.teamId,
+    lineup:               s.lineup,
+    setNumber:            s.setNumber,
+    pointHistory:         s.pointHistory,
+    currentRun:           s.currentRun,
+  })));
   const { playerStats, teamStats } = useMatchStats();
+  const showToast = useUiStore((s) => s.showToast);
 
-  const [records, setRecords] = useState([]);
-  useEffect(() => {
-    if (!teamId) return;
-    db.records.where('team_id').equals(teamId).toArray().then(setRecords);
-  }, [teamId]);
-
-  // Full-match contacts (across all sets) for accurate cross-set record tracking
-  const matchId = parseInt(matchIdParam, 10);
-  const allMatchContacts = useLiveQuery(
-    () => matchId ? db.contacts.where('match_id').equals(matchId).toArray() : [],
-    [matchId]
+  const records = useLiveQuery(
+    () => teamId ? db.records.where('team_id').equals(teamId).toArray() : [],
+    [teamId], []
   );
+
+  // Full-match contacts for accurate cross-set record tracking.
+  // Loaded once per set (not a live subscription) to avoid re-rendering on every tap.
+  // committedContacts (Zustand) provides real-time current-set data.
+  const matchId = parseInt(matchIdParam, 10);
+  const { currentSetId, committedContacts } = useMatchStore(useShallow((s) => ({
+    currentSetId:      s.currentSetId,
+    committedContacts: s.committedContacts,
+  })));
+
+  const [priorContacts, setPriorContacts] = useState([]);
+  useEffect(() => {
+    if (!matchId) return;
+    db.contacts.where('match_id').equals(matchId).toArray()
+      .then(setPriorContacts)
+      .catch(() => setPriorContacts([]));
+  }, [matchId, currentSetId]);
+
+  // Merge: prior-set contacts from DB + current-set contacts from Zustand.
+  // Deduplication by id handles the brief window after a set transition where
+  // the completed set's contacts appear in both arrays.
+  const allMatchContacts = useMemo(() => {
+    const currentIds = new Set(committedContacts.map((c) => c.id));
+    return [...priorContacts.filter((c) => !currentIds.has(c.id)), ...committedContacts];
+  }, [priorContacts, committedContacts]);
 
   const matchPositionMap = useMemo(() =>
     Object.fromEntries(lineup.filter((sl) => sl.playerId).map((sl) => [sl.playerId, sl.positionLabel])),
@@ -86,18 +126,22 @@ export function LiveMatchPage() {
   );
 
   const matchPlayerStats = useMemo(
-    () => computePlayerStats(allMatchContacts ?? [], setNumber, matchPositionMap),
+    () => computePlayerStats(allMatchContacts, setNumber, matchPositionMap),
     [allMatchContacts, setNumber, matchPositionMap]
   );
   const matchTeamStats = useMemo(
-    () => computeTeamStats(allMatchContacts ?? [], setNumber),
+    () => computeTeamStats(allMatchContacts, setNumber),
     [allMatchContacts, setNumber]
   );
 
   const { activeAlerts, pendingAlerts, markPendingShown } = useRecordAlerts(records ?? [], matchPlayerStats, matchTeamStats);
 
   // Keep screen awake during live match if setting is on
-  useWakeLock(localStorage.getItem('vbstat_wake_lock') === '1');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const wakeLockEnabled = useMemo(() => {
+    try { return localStorage.getItem(STORAGE_KEYS.WAKE_LOCK) === '1'; } catch { return false; }
+  }, []);
+  useWakeLock(wakeLockEnabled);
 
   // Haptic feedback on score change
   const prevScoreRef = useRef({ our: ourScore, opp: oppScore });
@@ -114,11 +158,14 @@ export function LiveMatchPage() {
   useEffect(() => {
     if (pointCount > 0 && pendingAlerts.length > 0) {
       markPendingShown();
+      const ICONS = { beat: '🏆', tie: '⚡', one_away: '🔥', pct90: '▲', pct80: '▲' };
+      pendingAlerts.forEach((a) =>
+        showToast(`${ICONS[a.milestone] ?? ''} ${a.playerName} · ${a.statLabel}: ${a.currentValue}`, 'info')
+      );
       setStatsOpen(true);
       setLiveStatsDefaultTab('RECORDS');
     }
-  // intentionally only re-runs when a new point is scored; markPendingShown and
-  // setStatsOpen are stable refs that don't need to be deps
+  // intentionally only re-runs when a new point is scored; stable refs excluded from deps
   }, [pointCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTimeoutClose = useCallback(() => {
@@ -161,16 +208,19 @@ export function LiveMatchPage() {
     if (!matchId) return;
 
     async function init() {
-      // Level 1: match + in-progress set in parallel
+      try {
+      // Level 1: match + target set in parallel
       const [match, currentSetOrNull] = await Promise.all([
         db.matches.get(matchId),
-        db.sets.where('match_id').equals(matchId).filter((s) => s.status === SET_STATUS.IN_PROGRESS).first(),
+        isRevising && revisingSetId
+          ? db.sets.get(revisingSetId)
+          : db.sets.where('match_id').equals(matchId).filter((s) => s.status === SET_STATUS.IN_PROGRESS).first(),
       ]);
       if (!match) return;
 
       // If no in-progress set, fall back to last set
       let currentSet = currentSetOrNull;
-      if (!currentSet) {
+      if (!currentSet && !isRevising) {
         const allSets = await db.sets.where('match_id').equals(matchId).sortBy('set_number');
         currentSet = allSets[allSets.length - 1];
       }
@@ -240,8 +290,13 @@ export function LiveMatchPage() {
 
       setTeamName(teamDisplayName);
       setOpponentName(oppDisplayName);
-      setMatch(matchId, currentSet.id, season?.team_id ?? null, match.format ?? null);
+      setMatch(matchId, currentSet.id, season?.team_id ?? null, match.format ?? null, match.last_set_score ?? 15);
+      loadSetFormationData(currentSet);
       setReady(true);
+      await loadServeReticles(currentSet.id);
+      } catch (err) {
+        console.error('LiveMatchPage init failed:', err);
+      }
     }
 
     init();
@@ -286,6 +341,7 @@ export function LiveMatchPage() {
           <div>
             <p className="text-white text-xl font-bold mb-2">Rotate to Landscape</p>
             <p className="text-slate-400 text-sm">The stat screen requires landscape orientation</p>
+            <p className="text-slate-600 text-xs mt-3">Tip: lock rotation in Control Center to keep landscape locked</p>
           </div>
         </div>
       )}
@@ -312,6 +368,7 @@ export function LiveMatchPage() {
         onSummaryOpen={() => setSummaryOpen(true)}
         onLiberoIn={() => setLiberoSwapOpen(true)}
         liberoPlayer={liberoPlayer}
+        alertCount={activeAlerts.length}
       />
 
       {subOpen          && <SubstitutionModal onClose={() => setSubOpen(false)} />}
@@ -367,19 +424,32 @@ export function LiveMatchPage() {
         />
       )}
 
+      {pendingServeContact && (
+        <ServeZoneModal
+          pendingContact={pendingServeContact}
+          reticles={serveReticles}
+          onConfirm={confirmServeZone}
+          onDismiss={dismissServeZoneModal}
+        />
+      )}
+
       {pendingSetWin && (() => {
         const setsNeeded  = format === FORMAT.BEST_OF_3 ? 2 : 3;
         const newSetsUs   = ourSetsWon + (pendingSetWin === SIDE.US   ? 1 : 0);
         const newSetsThem = oppSetsWon + (pendingSetWin === SIDE.THEM ? 1 : 0);
-        const isMatchOver = newSetsUs >= setsNeeded || newSetsThem >= setsNeeded;
+        const isMatchOver = isRevising || newSetsUs >= setsNeeded || newSetsThem >= setsNeeded;
         return (
           <ConfirmDialog
-            title={isMatchOver ? 'End Match?' : 'End Set?'}
-            message={`Final score: ${ourScore} – ${oppScore}. ${isMatchOver ? 'End the match with this score?' : 'End the set with this score?'}`}
-            confirmLabel={isMatchOver ? 'End Match' : 'End Set'}
+            title={isRevising ? 'Finish Revised Set?' : (isMatchOver ? 'End Match?' : 'End Set?')}
+            message={`Final score: ${ourScore} – ${oppScore}. ${isRevising ? 'Save this set and return to the match summary?' : (isMatchOver ? 'End the match with this score?' : 'End the set with this score?')}`}
+            confirmLabel={isRevising ? 'Save Set' : (isMatchOver ? 'End Match' : 'End Set')}
             cancelLabel="Keep Playing"
             onConfirm={async () => {
-              if (isMatchOver) {
+              if (isRevising) {
+                await finishRevisedSet(pendingSetWin);
+                clearPendingSetWin();
+                navigate(`/matches/${matchIdParam}/summary`);
+              } else if (isMatchOver) {
                 await endMatch(pendingSetWin);
                 clearPendingSetWin();
                 if (pendingAlerts.length > 0) {

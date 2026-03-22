@@ -2,10 +2,10 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
-import { computeMatchStats } from '../stats/engine';
+import { computeMatchStats, computeSetTrends, computeRallyHistogram } from '../stats/engine';
 import { exportMatchCSV, exportMatchPDF, exportMaxPrepsCSV } from '../stats/export';
 import { fmtHitting, fmtPassRating, fmtPct, fmtCount, fmtDate, fmtVER } from '../stats/formatters';
-import { ROTATION_COLS } from '../stats/columns';
+import { ROTATION_COLS, SERVING_COLS, TAB_COLUMNS } from '../stats/columns';
 import { PageHeader } from '../components/layout/PageHeader';
 import { TabBar } from '../components/ui/Tab';
 import { Button } from '../components/ui/Button';
@@ -15,10 +15,69 @@ import { RotationSpotlight } from '../components/stats/RotationSpotlight';
 import { PointQualityPanel } from '../components/stats/PointQualityPanel';
 import { RotationRadarChart } from '../components/charts/RotationRadarChart';
 import { CourtHeatMap } from '../components/charts/CourtHeatMap';
+import { ReviseSetModal } from '../components/match/ReviseSetModal';
+import { BoxScoreEntryModal } from '../components/match/BoxScoreEntryModal';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell,
 } from 'recharts';
+
+// Zone layout (server's perspective, top = back row)
+//   [1, 6, 5]
+//   [2, 3, 4]
+const ZONE_ROWS = [[1, 6, 5], [2, 3, 4]];
+
+function ServeZoneGrid({ zones }) {
+  const total = Object.values(zones).reduce((s, z) => s + z.sa, 0);
+  if (!total) return null;
+  return (
+    <div className="mt-4">
+      <p className="text-xs text-slate-400 mb-2 font-semibold uppercase tracking-wide">Serve Zone Distribution</p>
+      <div className="grid grid-rows-2 gap-1">
+        {ZONE_ROWS.map((row, ri) => (
+          <div key={ri} className="grid grid-cols-3 gap-1">
+            {row.map((z) => {
+              const s = zones[z];
+              const pct = total ? Math.round(s.sa / total * 100) : 0;
+              const intensity = Math.min(pct / 40, 1); // saturate at 40%
+              return (
+                <div
+                  key={z}
+                  className="rounded-lg p-2 text-center relative overflow-hidden"
+                  style={{ background: `rgba(249,115,22,${0.05 + intensity * 0.35})`, border: '1px solid rgba(249,115,22,0.2)' }}
+                >
+                  <div className="text-[10px] text-slate-400 font-bold">Z{z}</div>
+                  <div className="text-base font-black text-white">{s.sa}</div>
+                  <div className="text-[9px] text-slate-400">{pct}%</div>
+                  {s.ace > 0 && <div className="text-[9px] text-yellow-400">{s.ace} ACE</div>}
+                  {s.se  > 0 && <div className="text-[9px] text-red-400">{s.se} ERR</div>}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SubToggle({ options, value, onChange }) {
+  return (
+    <div className="flex gap-1 mb-3">
+      {options.map(([v, label]) => (
+        <button
+          key={v}
+          onClick={() => onChange(v)}
+          className={`flex-1 py-1.5 rounded text-xs font-bold transition-colors ${
+            value === v ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 const TABS = [
   { value: 'points',    label: 'Points'    },
@@ -26,11 +85,8 @@ const TABS = [
   { value: 'serving',   label: 'Serving'   },
   { value: 'passing',   label: 'Passing'   },
   { value: 'attacking', label: 'Attacking' },
-  { value: 'blocking',  label: 'Blocking'  },
   { value: 'defense',   label: 'Defense'   },
-  { value: 'setting',   label: 'Setting'   },
-  { value: 'rotation',  label: 'Rotation'  },
-  { value: 'compare',   label: 'Compare'   },
+  { value: 'opponent',  label: 'Opp'       },
 ];
 
 // ── Match Notes ──────────────────────────────────────────────────────────────
@@ -38,6 +94,8 @@ const TABS = [
 function MatchNotes({ matchId, initialNotes }) {
   const [notes, setNotes] = useState(initialNotes ?? '');
   const timerRef = useRef(null);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
 
   function handleChange(e) {
     const v = e.target.value;
@@ -63,39 +121,6 @@ function MatchNotes({ matchId, initialNotes }) {
 }
 
 // ── Set-by-Set Trend Chart ───────────────────────────────────────────────────
-
-function computeSetTrends(contacts, sets) {
-  if (!contacts?.length || !sets?.length) return [];
-  const setNumById = Object.fromEntries(sets.map(s => [s.id, s.set_number]));
-  const bySet = {};
-  for (const c of contacts) {
-    const sn = setNumById[c.set_id];
-    if (!sn) continue;
-    if (!bySet[sn]) bySet[sn] = { ta: 0, k: 0, ae: 0, pa: 0, p0: 0, p1: 0, p2: 0, p3: 0, sa: 0, ace: 0, se: 0 };
-    const s = bySet[sn];
-    if (c.action === 'attack') {
-      s.ta++; if (c.result === 'kill') s.k++; if (c.result === 'error') s.ae++;
-    } else if (c.action === 'pass') {
-      s.pa++;
-      if (c.result === '0') s.p0++;
-      else if (c.result === '1') s.p1++;
-      else if (c.result === '2') s.p2++;
-      else if (c.result === '3') s.p3++;
-    } else if (c.action === 'serve') {
-      s.sa++; if (c.result === 'ace') s.ace++; if (c.result === 'error') s.se++;
-    }
-  }
-  return Object.entries(bySet)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([sn, s]) => ({
-      name: `Set ${sn}`,
-      'K%':    s.ta ? Math.round(s.k / s.ta * 100) : 0,
-      'HIT%':  s.ta ? Math.round((s.k - s.ae) / s.ta * 100) : 0,
-      'APR':   s.pa ? Math.round(((s.p1 * 1 + s.p2 * 2 + s.p3 * 3) / s.pa) * 100) / 100 : 0,
-      'ACE%':  s.sa ? Math.round(s.ace / s.sa * 100) : 0,
-      'SE%':   s.sa ? Math.round(s.se  / s.sa * 100) : 0,
-    }));
-}
 
 const TREND_METRICS = [
   { key: 'K%',   color: '#f97316', label: 'Kill %'     },
@@ -308,30 +333,6 @@ function RotationBarChart({ rotationRows }) {
 
 // ── Rally Length Histogram ───────────────────────────────────────────────────
 
-const RALLY_BUCKETS = [
-  { label: '1',    min: 1, max: 1  },
-  { label: '2–3',  min: 2, max: 3  },
-  { label: '4–6',  min: 4, max: 6  },
-  { label: '7–10', min: 7, max: 10 },
-  { label: '11+',  min: 11, max: Infinity },
-];
-
-function computeRallyHistogram(contacts) {
-  if (!contacts?.length) return [];
-  const lenByRally = new Map();
-  for (const c of contacts) {
-    if (!c.rally_id) continue;
-    lenByRally.set(c.rally_id, (lenByRally.get(c.rally_id) ?? 0) + 1);
-  }
-  const counts = RALLY_BUCKETS.map(b => ({ name: b.label, rallies: 0 }));
-  for (const len of lenByRally.values()) {
-    const idx = RALLY_BUCKETS.findIndex(b => len >= b.min && len <= b.max);
-    if (idx >= 0) counts[idx].rallies++;
-  }
-  const total = counts.reduce((s, c) => s + c.rallies, 0);
-  return counts.map(c => ({ ...c, pct: total ? Math.round(c.rallies / total * 100) : 0 }));
-}
-
 function RallyHistogram({ contacts }) {
   const data = useMemo(() => computeRallyHistogram(contacts), [contacts]);
   const total = data.reduce((s, d) => s + d.rallies, 0);
@@ -458,110 +459,27 @@ const ShareCard = ({ cardRef, match, sets, stats, fmtDate }) => {
   );
 };
 
-const SP_MP_COLS = [
-  { key: 'sp', label: 'SP', fmt: fmtCount },
-  { key: 'mp', label: 'MP', fmt: fmtCount },
-];
-
-const SERVING_COLS = {
-  all: [
-    { key: 'name',     label: 'Player' },
-    ...SP_MP_COLS,
-    { key: 'sa',       label: 'SA',    fmt: fmtCount },
-    { key: 'ace',      label: 'ACE',   fmt: fmtCount },
-    { key: 'se',       label: 'SE',    fmt: fmtCount },
-    { key: 'se_ob',    label: 'SOB',   fmt: fmtCount },
-    { key: 'se_net',   label: 'SNET',  fmt: fmtCount },
-    { key: 'ace_pct',  label: 'ACE%',  fmt: fmtPct   },
-    { key: 'si_pct',   label: 'S%',    fmt: fmtPct   },
-    { key: 'sob_pct',  label: 'SOB%',  fmt: fmtPct   },
-    { key: 'snet_pct', label: 'SNET%', fmt: fmtPct   },
-  ],
-  float: [
-    { key: 'name',      label: 'Player' },
-    ...SP_MP_COLS,
-    { key: 'f_sa',      label: 'SA',    fmt: fmtCount },
-    { key: 'f_ace',     label: 'ACE',   fmt: fmtCount },
-    { key: 'f_se',      label: 'SE',    fmt: fmtCount },
-    { key: 'f_ace_pct', label: 'ACE%',  fmt: fmtPct   },
-    { key: 'f_si_pct',  label: 'S%',  fmt: fmtPct   },
-  ],
-  top: [
-    { key: 'name',      label: 'Player' },
-    ...SP_MP_COLS,
-    { key: 't_sa',      label: 'SA',    fmt: fmtCount },
-    { key: 't_ace',     label: 'ACE',   fmt: fmtCount },
-    { key: 't_se',      label: 'SE',    fmt: fmtCount },
-    { key: 't_ace_pct', label: 'ACE%',  fmt: fmtPct   },
-    { key: 't_si_pct',  label: 'S%',  fmt: fmtPct   },
-  ],
-};
-
-const TAB_COLUMNS = {
-  serving: SERVING_COLS.all,
-  passing: [
-    { key: 'name',    label: 'Player' },
-    ...SP_MP_COLS,
-    { key: 'pa',      label: 'PA',    fmt: fmtCount     },
-    { key: 'p0',      label: 'P0',    fmt: fmtCount     },
-    { key: 'p1',      label: 'P1',    fmt: fmtCount     },
-    { key: 'p2',      label: 'P2',    fmt: fmtCount     },
-    { key: 'p3',      label: 'P3',    fmt: fmtCount     },
-    { key: 'apr',     label: 'APR',   fmt: fmtPassRating },
-    { key: 'pp_pct',  label: '3OPT%', fmt: fmtPct       },
-  ],
-  attacking: [
-    { key: 'name',      label: 'Player' },
-    ...SP_MP_COLS,
-    { key: 'ta',        label: 'TA',    fmt: fmtCount   },
-    { key: 'k',         label: 'K',     fmt: fmtCount   },
-    { key: 'ae',        label: 'AE',    fmt: fmtCount   },
-    { key: 'hit_pct',   label: 'HIT%',  fmt: fmtHitting },
-    { key: 'k_pct',     label: 'K%',    fmt: fmtPct     },
-    { key: 'kps',       label: 'KPS',   fmt: (v) => fmtCount(v != null ? +v.toFixed(2) : null) },
-    { key: 'pos_label', label: 'POS',   fmt: (v) => v ?? '—' },
-    { key: 'pos_mult',  label: '×',     fmt: (v) => v != null ? `×${v.toFixed(2)}` : '—' },
-    { key: 'ver',       label: 'VER',   fmt: fmtVER     },
-  ],
-  blocking: [
-    { key: 'name',  label: 'Player' },
-    ...SP_MP_COLS,
-    { key: 'bs',    label: 'BS',    fmt: fmtCount },
-    { key: 'ba',    label: 'BA',    fmt: fmtCount },
-    { key: 'be',    label: 'BE',    fmt: fmtCount },
-    { key: 'bps',   label: 'BPS',   fmt: (v) => fmtCount(v != null ? +v.toFixed(2) : null) },
-  ],
-  defense: [
-    { key: 'name',  label: 'Player' },
-    ...SP_MP_COLS,
-    { key: 'dig',   label: 'DIG',   fmt: fmtCount },
-    { key: 'de',    label: 'DE',    fmt: fmtCount },
-    { key: 'dips',  label: 'DiPS',  fmt: (v) => fmtCount(v != null ? +v.toFixed(2) : null) },
-    { key: 'fbr',   label: 'FBR',   fmt: fmtCount },
-    { key: 'fbs',   label: 'FBS',   fmt: fmtCount },
-  ],
-  setting: [
-    { key: 'name',  label: 'Player' },
-    ...SP_MP_COLS,
-    { key: 'ast',   label: 'AST',   fmt: fmtCount },
-    { key: 'bhe',   label: 'BHE',   fmt: fmtCount },
-    { key: 'aps',   label: 'APS',   fmt: fmtPassRating },
-  ],
-};
-
-
 export function MatchSummaryPage() {
   const { matchId } = useParams();
   const navigate = useNavigate();
   const id = Number(matchId);
 
   const [tab, setTab] = useState('points');
-  const [serveView, setServeView] = useState('all');
+  const [serveView,     setServeView]     = useState('all');
+  const [trendsView,    setTrendsView]    = useState('trends');
+  const [passingView,   setPassingView]   = useState('passing');
+  const [attackingView, setAttackingView] = useState('attacking');
+  const [defenseView,   setDefenseView]   = useState('defense');
   const [stats, setStats] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [statsError, setStatsError] = useState(null);
   const [sharingCard, setSharingCard] = useState(false);
-  const shareCardRef = useRef(null);
+  const shareCardRef    = useRef(null);
+  const html2canvasRef  = useRef(null);
+  const [reviseModalSet, setReviseModalSet] = useState(null);
+  const [boxScoreSet, setBoxScoreSet] = useState(null);
+  const [statsVersion, setStatsVersion] = useState(0);
 
   // Match + sets from Dexie (live)
   const match = useLiveQuery(() => db.matches.get(id), [id]);
@@ -576,21 +494,30 @@ export function MatchSummaryPage() {
     return Object.fromEntries(list.map(p => [p.id, p]));
   }, [match?.season_id]);
 
-  // Compute stats once match data is ready
+  // Preload html2canvas so share-card handler has no cold-start delay
+  useEffect(() => { import('html2canvas').then((m) => { html2canvasRef.current = m.default; }); }, []);
+
+  // Compute stats once match data is ready (re-runs after a box score save)
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setStatsError(null);
     computeMatchStats(id)
       .then((s) => { setStats(s); setContacts(s.contacts); })
+      .catch((err) => {
+        console.error('computeMatchStats failed', err);
+        setStatsError(err?.message ?? 'Failed to load stats');
+      })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, statsVersion]);
 
-  const playerNames   = players
+  const playerNames   = useMemo(() => players
     ? Object.fromEntries(Object.entries(players).map(([pid, p]) => [pid, p.name]))
-    : {};
-  const playerJerseys = players
+    : {}, [players]);
+  const playerJerseys = useMemo(() => players
     ? Object.fromEntries(Object.entries(players).map(([pid, p]) => [pid, p.jersey_number ?? '']))
-    : {};
+    : {}, [players]);
+  const playerList = useMemo(() => players ? Object.values(players) : [], [players]);
 
   const playerRows = useMemo(() =>
     stats
@@ -636,7 +563,7 @@ export function MatchSummaryPage() {
     if (!shareCardRef.current || !stats || !match) return;
     setSharingCard(true);
     try {
-      const html2canvas = (await import('html2canvas')).default;
+      const html2canvas = html2canvasRef.current ?? (await import('html2canvas')).default;
       const canvas = await html2canvas(shareCardRef.current, {
         backgroundColor: '#0f172a',
         scale: 2,
@@ -668,7 +595,15 @@ export function MatchSummaryPage() {
         <div className="flex justify-center py-16"><Spinner size="lg" /></div>
       )}
 
-      {!loading && match && (
+      {!loading && statsError && (
+        <div className="flex flex-col items-center py-16 gap-4 px-4 text-center">
+          <p className="text-slate-400 text-sm">Could not load match stats.</p>
+          <p className="text-slate-600 text-xs">{statsError}</p>
+          <Button variant="secondary" onClick={() => setStatsVersion((v) => v + 1)}>Retry</Button>
+        </div>
+      )}
+
+      {!loading && !statsError && match && (
         <>
           {/* Match header */}
           <div className="px-4 pt-4 pb-2">
@@ -700,9 +635,18 @@ export function MatchSummaryPage() {
                 {sets.filter(s => s.status === 'complete').map((s) => {
                   const won = s.our_score > s.opp_score;
                   return (
-                    <div key={s.id} className={`rounded-lg px-3 py-1 text-sm border ${won ? 'bg-emerald-900/30 border-emerald-700/50' : 'bg-red-900/30 border-red-800/50'}`}>
-                      <span className={`text-xs mr-1 font-semibold ${won ? 'text-emerald-500' : 'text-red-500'}`}>S{s.set_number}</span>
-                      <span className={`font-bold font-mono ${won ? 'text-emerald-300' : 'text-red-300'}`}>{s.our_score}–{s.opp_score}</span>
+                    <div key={s.id} className="flex items-center gap-1">
+                      <div className={`rounded-lg px-3 py-1 text-sm border ${won ? 'bg-emerald-900/30 border-emerald-700/50' : 'bg-red-900/30 border-red-800/50'}`}>
+                        <span className={`text-xs mr-1 font-semibold ${won ? 'text-emerald-500' : 'text-red-500'}`}>S{s.set_number}</span>
+                        <span className={`font-bold font-mono ${won ? 'text-emerald-300' : 'text-red-300'}`}>{s.our_score}–{s.opp_score}</span>
+                      </div>
+                      <button
+                        onClick={() => setReviseModalSet(s)}
+                        title="Revise set"
+                        className="text-xs text-slate-600 hover:text-slate-300 px-1 transition-colors"
+                      >
+                        ✎
+                      </button>
                     </div>
                   );
                 })}
@@ -756,63 +700,113 @@ export function MatchSummaryPage() {
             )}
 
             {tab === 'trends' && (
-              <div className="space-y-8">
-                <SetTrendsChart contacts={contacts} sets={sets ?? []} />
-                <div className="border-t border-slate-700/50 pt-6">
-                  <RallyHistogram contacts={contacts} />
-                </div>
-              </div>
-            )}
-
-            {tab === 'compare' && (
-              <PlayerComparison playerRows={playerRows} />
+              <>
+                <SubToggle
+                  options={[['trends', 'TRENDS'], ['rotation', 'ROTATION']]}
+                  value={trendsView}
+                  onChange={setTrendsView}
+                />
+                {trendsView === 'trends' && (
+                  <div className="space-y-8 mt-3">
+                    <SetTrendsChart contacts={contacts} sets={sets ?? []} />
+                    <div className="border-t border-slate-700/50 pt-6">
+                      <RallyHistogram contacts={contacts} />
+                    </div>
+                  </div>
+                )}
+                {trendsView === 'rotation' && stats?.rotation && (
+                  <div className="space-y-6 mt-3">
+                    <RotationBarChart rotationRows={rotationRows} />
+                    <RotationRadarChart rotationStats={stats.rotation} />
+                    <RotationSpotlight rows={rotationRows} />
+                    <StatTable columns={ROTATION_COLS} rows={rotationRows} />
+                    <div className="grid grid-cols-2 gap-4 text-sm text-center">
+                      <div className="bg-surface rounded-xl p-3">
+                        <div className="text-xs text-slate-400">Overall SO%</div>
+                        <div className="text-lg font-bold text-primary">{fmtPct(stats.rotation.so_pct)}</div>
+                      </div>
+                      <div className="bg-surface rounded-xl p-3">
+                        <div className="text-xs text-slate-400">Overall SP%</div>
+                        <div className="text-lg font-bold text-sky-400">{fmtPct(stats.rotation.bp_pct)}</div>
+                      </div>
+                    </div>
+                    <CourtHeatMap contacts={contacts} />
+                  </div>
+                )}
+              </>
             )}
 
             {tab === 'serving' && (
               <>
-                <div className="flex gap-1 mb-3">
-                  {[['all', 'ALL'], ['float', 'FLOAT'], ['top', 'TOP SPIN']].map(([v, label]) => (
-                    <button
-                      key={v}
-                      onClick={() => setServeView(v)}
-                      className={`flex-1 py-1.5 rounded text-xs font-bold transition-colors ${
-                        serveView === v
-                          ? 'bg-slate-600 text-white'
-                          : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <SubToggle
+                  options={[['all', 'ALL'], ['float', 'FLOAT'], ['top', 'TOP SPIN']]}
+                  value={serveView}
+                  onChange={setServeView}
+                />
                 <StatTable columns={SERVING_COLS[serveView]} rows={playerRows} />
+                {stats?.serveZones && (
+                  <ServeZoneGrid zones={stats.serveZones} />
+                )}
               </>
             )}
 
-            {TAB_COLUMNS[tab] && (
-              <StatTable
-                columns={TAB_COLUMNS[tab]}
-                rows={playerRows}
-              />
+            {tab === 'passing' && (
+              <>
+                <SubToggle
+                  options={[['passing', 'PASSING'], ['setting', 'SETTING']]}
+                  value={passingView}
+                  onChange={setPassingView}
+                />
+                <StatTable columns={TAB_COLUMNS[passingView]} rows={playerRows} />
+              </>
             )}
 
-            {tab === 'rotation' && stats?.rotation && (
-              <div className="space-y-6">
-                <RotationBarChart rotationRows={rotationRows} />
-                <RotationRadarChart rotationStats={stats.rotation} />
-                <RotationSpotlight rows={rotationRows} />
-                <StatTable columns={ROTATION_COLS} rows={rotationRows} />
-                <div className="grid grid-cols-2 gap-4 text-sm text-center">
-                  <div className="bg-surface rounded-xl p-3">
-                    <div className="text-xs text-slate-400">Overall SO%</div>
-                    <div className="text-lg font-bold text-primary">{fmtPct(stats.rotation.so_pct)}</div>
-                  </div>
-                  <div className="bg-surface rounded-xl p-3">
-                    <div className="text-xs text-slate-400">Overall SP%</div>
-                    <div className="text-lg font-bold text-sky-400">{fmtPct(stats.rotation.bp_pct)}</div>
-                  </div>
+            {tab === 'attacking' && (
+              <>
+                <SubToggle
+                  options={[['attacking', 'ATTACK'], ['blocking', 'BLOCK']]}
+                  value={attackingView}
+                  onChange={setAttackingView}
+                />
+                <StatTable columns={TAB_COLUMNS[attackingView]} rows={playerRows} />
+              </>
+            )}
+
+            {tab === 'defense' && (
+              <>
+                <SubToggle
+                  options={[['defense', 'DEFENSE'], ['compare', 'COMPARE']]}
+                  value={defenseView}
+                  onChange={setDefenseView}
+                />
+                {defenseView === 'defense' && (
+                  <StatTable columns={TAB_COLUMNS['defense']} rows={playerRows} />
+                )}
+                {defenseView === 'compare' && (
+                  <PlayerComparison playerRows={playerRows} />
+                )}
+              </>
+            )}
+
+            {tab === 'opponent' && stats?.opp && (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-400 mb-4">Opponent performance this match</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'ACE',  val: stats.opp.ace,  desc: 'Aces vs us'         },
+                    { label: 'SE',   val: stats.opp.se,   desc: 'Serve errors'        },
+                    { label: 'K',    val: stats.opp.k,    desc: 'Kills'               },
+                    { label: 'AE',   val: stats.opp.ae,   desc: 'Attack errors'       },
+                    { label: 'BLK',  val: stats.opp.blk,  desc: 'Blocked by us'       },
+                    { label: 'ERR',  val: stats.opp.errs, desc: 'Ball handling errors' },
+                  ].map(({ label, val, desc }) => (
+                    <div key={label} className="bg-surface rounded-xl p-3 text-center">
+                      <div className="text-xs text-slate-400 mb-1">{desc}</div>
+                      <div className="text-2xl font-black text-primary">{val}</div>
+                      <div className="text-xs font-bold text-slate-300 mt-0.5">{label}</div>
+                    </div>
+                  ))}
                 </div>
-                <CourtHeatMap contacts={contacts} />
               </div>
             )}
 
@@ -837,6 +831,25 @@ export function MatchSummaryPage() {
         stats={stats}
         fmtDate={fmtDate}
       />
+
+      {reviseModalSet && (
+        <ReviseSetModal
+          set={reviseModalSet}
+          matchId={id}
+          onClose={() => setReviseModalSet(null)}
+          onBoxScore={(s) => { setReviseModalSet(null); setBoxScoreSet(s); }}
+        />
+      )}
+
+      {boxScoreSet && (
+        <BoxScoreEntryModal
+          set={boxScoreSet}
+          matchId={id}
+          players={playerList}
+          onClose={() => setBoxScoreSet(null)}
+          onSaved={() => { setBoxScoreSet(null); setStatsVersion((v) => v + 1); }}
+        />
+      )}
     </div>
   );
 }

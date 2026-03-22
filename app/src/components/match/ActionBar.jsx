@@ -24,7 +24,7 @@ function useHoldButton(onFire) {
 }
 
 
-export const ActionBar = memo(function ActionBar({ onSubOpen, onMenuOpen, onStatsOpen, onSummaryOpen, liberoPlayer, onLiberoIn }) {
+export const ActionBar = memo(function ActionBar({ onSubOpen, onMenuOpen, onStatsOpen, onSummaryOpen, liberoPlayer, onLiberoIn, alertCount = 0 }) {
   const navigate       = useNavigate();
   const rotateForward  = useMatchStore((s) => s.rotateForward);
   const rotateBackward = useMatchStore((s) => s.rotateBackward);
@@ -146,12 +146,17 @@ export const ActionBar = memo(function ActionBar({ onSubOpen, onMenuOpen, onStat
       )}
 
       {/* Stats */}
-      <button
-        onPointerDown={(e) => { e.preventDefault(); onStatsOpen(); }}
-        className={`${btnBase} bg-slate-800 text-slate-300 hover:bg-slate-700`}
-      >
-        <span className="text-[12px] text-slate-500 leading-none">STATS</span>
-      </button>
+      <div className="relative flex-1 h-full">
+        <button
+          onPointerDown={(e) => { e.preventDefault(); onStatsOpen(); }}
+          className={`${btnBase} w-full bg-slate-800 text-slate-300 hover:bg-slate-700`}
+        >
+          <span className={`text-[12px] leading-none ${alertCount > 0 ? 'text-orange-400' : 'text-slate-500'}`}>STATS</span>
+        </button>
+        {alertCount > 0 && (
+          <span className="pointer-events-none absolute top-1 right-1 h-2 w-2 rounded-full bg-orange-400 animate-pulse" />
+        )}
+      </div>
 
       {/* Scoring summary */}
       <button

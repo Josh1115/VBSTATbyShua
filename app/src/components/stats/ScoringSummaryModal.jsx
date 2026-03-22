@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/schema';
 import { useMatchStore } from '../../store/matchStore';
+import { useShallow } from 'zustand/react/shallow';
+import { FORMAT, NFHS } from '../../constants';
 
 // ── Scoring Summary helpers ────────────────────────────────────────────────────
 
@@ -129,15 +131,22 @@ function ScoringPanel({ teamName, timeouts, cellNums, scoredMap, currentScore, s
 }
 
 function BookkeeperView({ rallies, contacts }) {
-  const teamName      = useMatchStore((s) => s.teamName);
-  const opponentName  = useMatchStore((s) => s.opponentName);
-  const ourTimeouts   = useMatchStore((s) => s.ourTimeouts);
-  const oppTimeouts   = useMatchStore((s) => s.oppTimeouts);
-  const teamId        = useMatchStore((s) => s.teamId);
-  const currentSetId  = useMatchStore((s) => s.currentSetId);
-  const setNumber     = useMatchStore((s) => s.setNumber);
-  const subsUsed      = useMatchStore((s) => s.subsUsed);
-  const maxSubsPerSet = useMatchStore((s) => s.maxSubsPerSet);
+  const {
+    teamName, opponentName, ourTimeouts, oppTimeouts, teamId,
+    currentSetId, setNumber, subsUsed, maxSubsPerSet, format, lastSetScore,
+  } = useMatchStore(useShallow((s) => ({
+    teamName:    s.teamName,
+    opponentName: s.opponentName,
+    ourTimeouts: s.ourTimeouts,
+    oppTimeouts: s.oppTimeouts,
+    teamId:      s.teamId,
+    currentSetId: s.currentSetId,
+    setNumber:   s.setNumber,
+    subsUsed:    s.subsUsed,
+    maxSubsPerSet: s.maxSubsPerSet,
+    format:      s.format,
+    lastSetScore: s.lastSetScore,
+  })));
 
   const teamPlayers = useLiveQuery(
     () => teamId ? db.players.where('team_id').equals(teamId).toArray() : [],
@@ -201,7 +210,7 @@ function BookkeeperView({ rallies, contacts }) {
     return subs
       .filter((s) => !s.libero_swap && s.player_out && s.player_in)
       .map((s) => {
-        const prev = rallyScores.findLast((rs) => rs.ts <= s.timestamp);
+        const prev = [...rallyScores].reverse().find((rs) => rs.ts <= s.timestamp);
         return {
           outJersey: jerseyMap[s.player_out] ?? '?',
           inJersey:  jerseyMap[s.player_in]  ?? '?',
@@ -221,7 +230,8 @@ function BookkeeperView({ rallies, contacts }) {
     [themPoints]
   );
 
-  const winTarget  = setNumber >= 5 ? 15 : 25;
+  const decidingSet = format === FORMAT.BEST_OF_3 ? 3 : 5;
+  const winTarget   = setNumber === decidingSet ? (lastSetScore ?? 15) : NFHS.SET_WIN_SCORE;
   const maxDisplay = Math.max(winTarget, usPoints.length, themPoints.length);
   const cellNums   = Array.from({ length: maxDisplay }, (_, i) => i + 1);
 

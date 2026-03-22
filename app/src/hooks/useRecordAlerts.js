@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { TRACKABLE_STATS } from '../constants';
 
 /**
@@ -39,6 +39,15 @@ export function computeMilestone(current, record, statType) {
 export function useRecordAlerts(records, playerStats, teamStats) {
   // Tracks which (recordId, milestone) pairs have been shown this match
   const shownRef = useRef(new Set());
+
+  // Prune stale shownRef entries when a record is deleted or replaced
+  useEffect(() => {
+    const currentIds = new Set(records?.map((r) => r.id) ?? []);
+    for (const key of shownRef.current) {
+      const recordId = Number(key.split('_')[0]);
+      if (!currentIds.has(recordId)) shownRef.current.delete(key);
+    }
+  }, [records]);
 
   const activeAlerts = useMemo(() => {
     if (!records?.length) return [];

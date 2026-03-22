@@ -8,6 +8,11 @@ import { exportBackup, importBackup } from '../stats/backup';
 import { db } from '../db/schema';
 import { useUiStore } from '../store/uiStore';
 import { FORMAT } from '../constants';
+import {
+  getStorageItem, setStorageItem,
+  getBoolStorage, setBoolStorage,
+  getIntStorage, STORAGE_KEYS,
+} from '../utils/storage';
 
 function useStorageEstimate() {
   const [estimate, setEstimate] = useState(null);
@@ -37,12 +42,12 @@ const ACCENT_COLORS = [
 
 function useMaxSubs() {
   const [maxSubs, setMaxSubsState] = useState(() => {
-    const saved = parseInt(localStorage.getItem('vbstat_max_subs'), 10);
+    const saved = getIntStorage(STORAGE_KEYS.MAX_SUBS);
     return !isNaN(saved) && saved > 0 ? saved : DEFAULT_MAX_SUBS;
   });
   const save = (val) => {
     const n = Math.max(1, Math.min(99, Number(val)));
-    localStorage.setItem('vbstat_max_subs', String(n));
+    setStorageItem(STORAGE_KEYS.MAX_SUBS, n);
     setMaxSubsState(n);
   };
   return [maxSubs, save];
@@ -50,20 +55,20 @@ function useMaxSubs() {
 
 function useDefaultFormat() {
   const [defaultFormat, setDefaultFormatState] = useState(() => {
-    const saved = localStorage.getItem('vbstat_default_format');
+    const saved = getStorageItem(STORAGE_KEYS.DEFAULT_FORMAT);
     return saved === FORMAT.BEST_OF_5 ? FORMAT.BEST_OF_5 : DEFAULT_FORMAT;
   });
   const save = (val) => {
-    localStorage.setItem('vbstat_default_format', val);
+    setStorageItem(STORAGE_KEYS.DEFAULT_FORMAT, val);
     setDefaultFormatState(val);
   };
   return [defaultFormat, save];
 }
 
 function useAmoledMode() {
-  const [amoled, setAmoledState] = useState(() => localStorage.getItem('vbstat_amoled') === '1');
+  const [amoled, setAmoledState] = useState(() => getBoolStorage(STORAGE_KEYS.AMOLED));
   const save = (val) => {
-    localStorage.setItem('vbstat_amoled', val ? '1' : '0');
+    setBoolStorage(STORAGE_KEYS.AMOLED, val);
     document.documentElement.classList.toggle('amoled', val);
     setAmoledState(val);
   };
@@ -71,16 +76,16 @@ function useAmoledMode() {
 }
 
 function useToggleSetting(key) {
-  const [val, setVal] = useState(() => localStorage.getItem(key) === '1');
-  const save = (next) => { localStorage.setItem(key, next ? '1' : '0'); setVal(next); };
+  const [val, setVal] = useState(() => getBoolStorage(key));
+  const save = (next) => { setBoolStorage(key, next); setVal(next); };
   return [val, save];
 }
 
 function useAccentColor() {
-  const [accent, setAccent] = useState(() => localStorage.getItem('vbstat_accent') ?? 'orange');
+  const [accent, setAccent] = useState(() => getStorageItem(STORAGE_KEYS.ACCENT, 'orange'));
   const save = (id) => {
     const c = ACCENT_COLORS.find((x) => x.id === id) ?? ACCENT_COLORS[0];
-    localStorage.setItem('vbstat_accent', id);
+    setStorageItem(STORAGE_KEYS.ACCENT, id);
     document.documentElement.style.setProperty('--color-primary', c.hex);
     document.documentElement.style.setProperty('--color-primary-rgb', c.rgb);
     setAccent(id);
@@ -89,8 +94,8 @@ function useAccentColor() {
 }
 
 function useCoachName() {
-  const [name, setName] = useState(() => localStorage.getItem('vbstat_coach_name') ?? '');
-  const save = (val) => { localStorage.setItem('vbstat_coach_name', val); setName(val); };
+  const [name, setName] = useState(() => getStorageItem(STORAGE_KEYS.COACH_NAME, ''));
+  const save = (val) => { setStorageItem(STORAGE_KEYS.COACH_NAME, val); setName(val); };
   return [name, save];
 }
 
@@ -103,34 +108,51 @@ const PLAYER_NAME_FORMATS = [
 ];
 
 function usePlayerNameFormat() {
-  const [fmt, setFmt] = useState(() => localStorage.getItem('vbstat_player_name_format') ?? 'initial_last');
-  const save = (id) => { localStorage.setItem('vbstat_player_name_format', id); setFmt(id); };
+  const [fmt, setFmt] = useState(() => getStorageItem(STORAGE_KEYS.PLAYER_NAME_FORMAT, 'initial_last'));
+  const save = (id) => { setStorageItem(STORAGE_KEYS.PLAYER_NAME_FORMAT, id); setFmt(id); };
   return [fmt, save];
 }
 
 function useScoreDetail() {
-  const [val, setVal] = useState(() => localStorage.getItem('vbstat_score_detail') ?? 'sets');
-  const save = (v) => { localStorage.setItem('vbstat_score_detail', v); setVal(v); };
+  const [val, setVal] = useState(() => getStorageItem(STORAGE_KEYS.SCORE_DETAIL, 'sets'));
+  const save = (v) => { setStorageItem(STORAGE_KEYS.SCORE_DETAIL, v); setVal(v); };
   return [val, save];
 }
 
 function useMatchViewDefault() {
-  const [val, setVal] = useState(() => localStorage.getItem('vbstat_match_view_default') ?? 'recent');
-  const save = (v) => { localStorage.setItem('vbstat_match_view_default', v); setVal(v); };
+  const [val, setVal] = useState(() => getStorageItem(STORAGE_KEYS.MATCH_VIEW_DEFAULT, 'recent'));
+  const save = (v) => { setStorageItem(STORAGE_KEYS.MATCH_VIEW_DEFAULT, v); setVal(v); };
   return [val, save];
 }
 
 function useDefaultTeam() {
   const [defaultTeamId, setDefaultTeamId] = useState(() => {
-    const saved = parseInt(localStorage.getItem('vbstat_default_team_id'), 10);
+    const saved = getIntStorage(STORAGE_KEYS.DEFAULT_TEAM_ID);
     return !isNaN(saved) ? saved : null;
   });
   const save = (id) => {
-    if (id == null) localStorage.removeItem('vbstat_default_team_id');
-    else localStorage.setItem('vbstat_default_team_id', String(id));
+    setStorageItem(STORAGE_KEYS.DEFAULT_TEAM_ID, id);
     setDefaultTeamId(id);
   };
   return [defaultTeamId, save];
+}
+
+function useLastSetScore() {
+  const [val, setVal] = useState(() => getIntStorage(STORAGE_KEYS.LAST_SET_SCORE, 15));
+  const save = (n) => { setStorageItem(STORAGE_KEYS.LAST_SET_SCORE, n); setVal(n); };
+  return [val, save];
+}
+
+function useDefaultSeason() {
+  const [defaultSeasonId, setDefaultSeasonId] = useState(() => {
+    const saved = getIntStorage(STORAGE_KEYS.DEFAULT_SEASON_ID);
+    return !isNaN(saved) ? saved : null;
+  });
+  const save = (id) => {
+    setStorageItem(STORAGE_KEYS.DEFAULT_SEASON_ID, id);
+    setDefaultSeasonId(id);
+  };
+  return [defaultSeasonId, save];
 }
 
 export function SettingsPage() {
@@ -138,15 +160,21 @@ export function SettingsPage() {
   const fileInputRef = useRef(null);
   const [maxSubs, saveMaxSubs]           = useMaxSubs();
   const [defaultFormat, saveDefaultFormat] = useDefaultFormat();
+  const [lastSetScore, saveLastSetScore] = useLastSetScore();
 
   const [amoled,      saveAmoled]      = useAmoledMode();
   const [accent,      saveAccent]      = useAccentColor();
   const [coachName,     saveCoachName]     = useCoachName();
   const [defaultTeamId,    saveDefaultTeam]    = useDefaultTeam();
+  const [defaultSeasonId,  saveDefaultSeason]  = useDefaultSeason();
   const [scoreDetail,      saveScoreDetail]    = useScoreDetail();
   const [matchViewDefault, saveMatchViewDefault] = useMatchViewDefault();
   const [playerNameFormat, savePlayerNameFormat] = usePlayerNameFormat();
   const teams = useLiveQuery(() => db.teams.orderBy('name').toArray(), []);
+  const defaultTeamSeasons = useLiveQuery(
+    () => defaultTeamId ? db.seasons.where('team_id').equals(defaultTeamId).sortBy('year') : Promise.resolve([]),
+    [defaultTeamId]
+  );
   const [wakeLock,    saveWakeLock]    = useToggleSetting('vbstat_wake_lock');
   const [hapticOn,    saveHaptic]      = useToggleSetting('vbstat_haptic');
   const [flipLayout,  saveFlipLayout]  = useToggleSetting('vbstat_flip_layout');
@@ -284,7 +312,10 @@ export function SettingsPage() {
               <div className="text-xs text-slate-400 mb-2">Pre-selected in tool pages and session setup</div>
               <select
                 value={defaultTeamId ?? ''}
-                onChange={(e) => saveDefaultTeam(Number(e.target.value) || null)}
+                onChange={(e) => {
+                  saveDefaultTeam(Number(e.target.value) || null);
+                  saveDefaultSeason(null);
+                }}
                 className="w-full bg-bg border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary"
               >
                 <option value="">No default</option>
@@ -293,6 +324,24 @@ export function SettingsPage() {
                 ))}
               </select>
             </div>
+
+            {/* Default season — only shown when a default team is set */}
+            {defaultTeamId && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Default Season</label>
+                <div className="text-xs text-slate-400 mb-2">Pre-selected in Reports and tool pages for this team</div>
+                <select
+                  value={defaultSeasonId ?? ''}
+                  onChange={(e) => saveDefaultSeason(Number(e.target.value) || null)}
+                  className="w-full bg-bg border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-primary"
+                >
+                  <option value="">No default</option>
+                  {(defaultTeamSeasons ?? []).map((s) => (
+                    <option key={s.id} value={s.id}>{s.name ?? s.year}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Match card score display */}
             <div>
@@ -502,6 +551,25 @@ export function SettingsPage() {
                       }`}
                   >
                     {f === FORMAT.BEST_OF_3 ? 'Best of 3' : 'Best of 5'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Last Set Plays To</label>
+              <div className="text-xs text-slate-500 mb-2">The deciding set win score (sets 1–{defaultFormat === FORMAT.BEST_OF_3 ? '2' : '4'} always play to 25)</div>
+              <div className="flex gap-2">
+                {[15, 25].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => saveLastSetScore(n)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors
+                      ${lastSetScore === n
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-bg text-slate-300 border-slate-600 hover:border-slate-400'
+                      }`}
+                  >
+                    {n}
                   </button>
                 ))}
               </div>

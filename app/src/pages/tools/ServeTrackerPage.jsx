@@ -1,13 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../../db/schema';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { useUiStore, selectShowToast } from '../../store/uiStore';
 import { fmtDateShort } from '../../stats/formatters';
+import { getIntStorage, setStorageItem, STORAGE_KEYS } from '../../utils/storage';
 
 // Standard FIVB zone layout from server's POV (aiming at opponent's court)
 // Front row: 4 | 3 | 2    Back row: 5 | 6 | 1
 const ZONE_ROWS = [[4, 3, 2], [5, 6, 1]];
+const DRAFT_KEY = 'vbstat_draft_serve_tracker';
+
+function readDraft() {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { return null; }
+}
 
 function heatStyle(count, max) {
   if (!count || !max) return {};
@@ -110,13 +116,14 @@ function Chip({ label, value, color = 'text-white' }) {
 
 // ─── Setup screen ─────────────────────────────────────────────────────────────
 
-function SetupView({ onStart }) {
+function SetupView({ onStart, onResume, onDiscardDraft }) {
   const [mode,    setMode]    = useState('individual'); // 'team' | 'individual'
   const [teamId,  setTeamId]  = useState(() => {
-    const saved = parseInt(localStorage.getItem('vbstat_default_team_id'), 10);
+    const saved = getIntStorage(STORAGE_KEYS.DEFAULT_TEAM_ID);
     return !isNaN(saved) ? saved : null;
   });
   const [checked, setChecked] = useState(new Set());
+  const [draft]               = useState(readDraft);
 
   const teams   = useLiveQuery(() => db.teams.orderBy('name').toArray(), []);
   const players = useLiveQuery(
@@ -151,6 +158,22 @@ function SetupView({ onStart }) {
 
   return (
     <div className="p-4 space-y-4">
+      {/* Resume draft banner */}
+      {draft && (
+        <div className="bg-orange-900/40 border border-orange-700 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-orange-200">Resume unsaved session?</p>
+            <p className="text-xs text-orange-300/70 mt-0.5 truncate">
+              {draft.type === 'team' ? `Team · ${draft.serves?.length ?? 0} serves` : `${draft.players?.length ?? 0} servers`}
+            </p>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button onClick={onDiscardDraft} className="text-xs text-slate-400 font-semibold px-2 py-1">Discard</button>
+            <button onClick={() => onResume(draft)} className="text-xs bg-orange-600 text-white font-bold rounded-lg px-3 py-1.5">Resume</button>
+          </div>
+        </div>
+      )}
+
       {/* Mode toggle */}
       <div className="bg-surface rounded-xl p-1 grid grid-cols-2 gap-1">
         {[
@@ -170,7 +193,7 @@ function SetupView({ onStart }) {
         ))}
       </div>
 
-      {/* Team picker — shown in both modes; optional in team mode */}
+      {/* Team picker */}
       <div className="bg-surface rounded-xl p-4 space-y-2">
         <label className="text-xs text-slate-400 uppercase tracking-wide font-semibold block">
           Team {mode === 'team' && <span className="text-slate-600 normal-case font-normal">(optional)</span>}
@@ -278,10 +301,15 @@ function SetupView({ onStart }) {
 
 // ─── Team session ─────────────────────────────────────────────────────────────
 
-function TeamSessionView({ label, teamId }) {
-  const [serves,  setServes]  = useState([]);
-  const [history, setHistory] = useState([]);
+function TeamSessionView({ label, teamId, initialServes = [] }) {
+  const [serves,  setServes]  = useState(initialServes);
+  const [history, setHistory] = useState(initialServes.map((s) => s));
   const showToast = useUiStore(selectShowToast);
+
+  // Auto-save draft on every change
+  useEffect(() => {
+    setStorageItem(DRAFT_KEY, JSON.stringify({ type: 'team', label, teamId, serves }));
+  }, [serves, label, teamId]);
 
   function record(serve) {
     setServes((s) => [...s, serve]);
@@ -302,6 +330,7 @@ function TeamSessionView({ label, teamId }) {
       label,
       data: { mode: 'team', label, stats },
     });
+    setStorageItem(DRAFT_KEY, null);
     showToast('Session saved', 'success');
   }
 
@@ -333,11 +362,16 @@ function TeamSessionView({ label, teamId }) {
 
 function IndividualSessionView({ players: initPlayers, teamId }) {
   const [players,   setPlayers]   = useState(() =>
-    initPlayers.map((p) => ({ id: p.id, name: p.name, jersey: p.jersey_number, serves: [] }))
+    initPlayers.map((p) => ({ id: p.id, name: p.name, jersey: p.jersey_number ?? p.jersey, serves: p.serves ?? [] }))
   );
   const [activeIdx, setActiveIdx] = useState(0);
   const [history,   setHistory]   = useState([]);
   const showToast = useUiStore(selectShowToast);
+
+  // Auto-save draft on every change
+  useEffect(() => {
+    setStorageItem(DRAFT_KEY, JSON.stringify({ type: 'individual', teamId, players }));
+  }, [players, teamId]);
 
   function record(serve) {
     setPlayers((ps) => ps.map((p, i) => i === activeIdx ? { ...p, serves: [...p.serves, serve] } : p));
@@ -363,6 +397,7 @@ function IndividualSessionView({ players: initPlayers, teamId }) {
         players: players.map((p) => ({ id: p.id, name: p.name, jersey: p.jersey, stats: calcStats(p.serves) })),
       },
     });
+    setStorageItem(DRAFT_KEY, null);
     showToast('Session saved', 'success');
   }
 
@@ -404,7 +439,20 @@ function IndividualSessionView({ players: initPlayers, teamId }) {
 // ─── Page shell ───────────────────────────────────────────────────────────────
 
 export function ServeTrackerPage() {
-  const [session, setSession] = useState(null); // null | { mode, label?, players?, teamId }
+  const [session, setSession] = useState(null); // null | { mode, label?, players?, teamId, initialServes? }
+
+  function handleResume(draft) {
+    if (draft.type === 'team') {
+      setSession({ mode: 'team', label: draft.label, teamId: draft.teamId, initialServes: draft.serves ?? [] });
+    } else {
+      setSession({ mode: 'individual', players: draft.players ?? [], teamId: draft.teamId });
+    }
+  }
+
+  function handleReset() {
+    setSession(null);
+    setStorageItem(DRAFT_KEY, null);
+  }
 
   return (
     <div>
@@ -413,20 +461,21 @@ export function ServeTrackerPage() {
         backTo={session ? null : '/tools'}
         action={
           session && (
-            <button
-              onClick={() => setSession(null)}
-              className="text-sm text-red-400 font-semibold px-2 py-1"
-            >
+            <button onClick={handleReset} className="text-sm text-red-400 font-semibold px-2 py-1">
               Reset
             </button>
           )
         }
       />
       {!session && (
-        <SetupView onStart={setSession} />
+        <SetupView
+          onStart={setSession}
+          onResume={handleResume}
+          onDiscardDraft={() => setStorageItem(DRAFT_KEY, null)}
+        />
       )}
       {session?.mode === 'team' && (
-        <TeamSessionView label={session.label} teamId={session.teamId} />
+        <TeamSessionView label={session.label} teamId={session.teamId} initialServes={session.initialServes ?? []} />
       )}
       {session?.mode === 'individual' && (
         <IndividualSessionView players={session.players} teamId={session.teamId} />

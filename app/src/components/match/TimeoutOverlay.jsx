@@ -19,7 +19,7 @@ const COLUMNS = {
   ],
   PASSING: [
     { key: 'name',   label: 'Player' },
-    { key: 'pa',     label: 'PA',  fmt: fmtCount },
+    { key: 'pa',     label: 'REC', fmt: fmtCount },
     { key: 'p0',     label: 'P0',  fmt: fmtCount },
     { key: 'p1',     label: 'P1',  fmt: fmtCount },
     { key: 'p2',     label: 'P2',  fmt: fmtCount },

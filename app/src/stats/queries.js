@@ -14,6 +14,23 @@ export const getSetsPlayedCount = async (matchId) => {
   return complete + (inProgress ? 1 : 0) || 1;
 };
 
+// Batched version — single query for multiple matches, returns { [matchId]: count }
+export const getBatchSetsPlayedCount = async (matchIds) => {
+  if (!matchIds.length) return {};
+  const sets = await db.sets.where('match_id').anyOf(matchIds).toArray();
+  const counts = Object.fromEntries(matchIds.map(id => [id, 0]));
+  let inProgress = {};
+  for (const s of sets) {
+    if (s.status === 'complete')     counts[s.match_id] = (counts[s.match_id] ?? 0) + 1;
+    if (s.status === 'in_progress')  inProgress[s.match_id] = true;
+  }
+  for (const id of matchIds) {
+    if (inProgress[id]) counts[id] = (counts[id] ?? 0) + 1;
+    if (!counts[id]) counts[id] = 1;
+  }
+  return counts;
+};
+
 // Rallies for a match — requires two hops (match → sets → rallies)
 export const getRalliesForMatch = async (matchId) => {
   const sets   = await db.sets.where('match_id').equals(matchId).toArray();

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useMatchStore } from '../../store/matchStore';
 import { useMatchStats } from '../../hooks/useMatchStats';
@@ -48,7 +49,7 @@ const SERVING_COLS = {
 const COLUMNS = {
   PASSING: [
     { key: 'name',   label: 'Player' },
-    { key: 'pa',     label: 'PA',  fmt: fmtCount },
+    { key: 'pa',     label: 'REC', fmt: fmtCount },
     { key: 'p0',     label: 'P0',  fmt: fmtCount },
     { key: 'p1',     label: 'P1',  fmt: fmtCount },
     { key: 'p2',     label: 'P2',  fmt: fmtCount },
@@ -88,6 +89,123 @@ const COLUMNS = {
     { key: 'bs',   label: 'BS',   fmt: fmtCount },
   ],
 };
+
+// ── Serve Zone Stats Panel ────────────────────────────────────────────────────
+const SERVE_ZONE_GRID = [
+  [1, 6, 5],
+  [2, 3, 4],
+];
+const SZ_W = 270, SZ_H = 180;
+
+function ServeZoneStatsPanel({ contacts }) {
+  const zoned = contacts.filter(c => c.action === 'serve' && c.zone != null);
+
+  if (zoned.length === 0) {
+    return (
+      <div className="p-4 text-center text-slate-600 text-xs">
+        No serve zone data yet — tap a zone after each serve
+      </div>
+    );
+  }
+
+  // Per-zone counts
+  const stats = {};
+  for (let z = 1; z <= 6; z++) stats[z] = { total: 0, ace: 0, in: 0 };
+  for (const c of zoned) {
+    const z = c.zone;
+    if (!stats[z]) continue;
+    stats[z].total += 1;
+    if (c.result === 'ace') stats[z].ace += 1;
+    if (c.result === 'in')  stats[z].in  += 1;
+  }
+
+  const maxTotal = Math.max(1, ...Object.values(stats).map(s => s.total));
+
+  return (
+    <div className="border-t border-slate-800 p-4 space-y-4">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Serve Zone Breakdown</p>
+
+      {/* Court heatmap */}
+      <div className="flex justify-center">
+        <div className="flex flex-col items-center gap-1">
+          <svg viewBox={`0 0 ${SZ_W} ${SZ_H}`} width={SZ_W} height={SZ_H} style={{ maxWidth: '100%' }} className="rounded overflow-hidden">
+            <rect width={SZ_W} height={SZ_H} fill="#0f172a" />
+            {SERVE_ZONE_GRID.map((row, ri) =>
+              row.map((zone, ci) => {
+                const x = ci * (SZ_W / 3);
+                const y = ri * (SZ_H / 2);
+                const s = stats[zone];
+                const t = s.total ? Math.log1p(s.total) / Math.log1p(maxTotal) : 0;
+                // Interpolate blue (cold) → red (hot) via RGB
+                const r = Math.round(t * 220);
+                const g = 0;
+                const b = Math.round((1 - t) * 220);
+                const cellFill = s.total ? `rgb(${r},${g},${b})` : '#0f172a';
+                const cellOpacity = s.total ? 0.15 + 0.85 * t : 1;
+                return (
+                  <g key={zone}>
+                    <rect x={x} y={y} width={SZ_W/3} height={SZ_H/2}
+                      fill={cellFill} opacity={cellOpacity} stroke="#1e293b" strokeWidth={1} />
+                    <text x={x + SZ_W/6} y={y + SZ_H/4 - 6}
+                      textAnchor="middle" dominantBaseline="middle"
+                      fill="rgba(255,255,255,0.4)" fontSize={10}>Z{zone}</text>
+                    <text x={x + SZ_W/6} y={y + SZ_H/4 + 8}
+                      textAnchor="middle" dominantBaseline="middle"
+                      fill={t > 0.35 ? '#fff' : '#94a3b8'} fontSize={16} fontWeight="bold">
+                      {s.total}
+                    </text>
+                    {s.ace > 0 && (
+                      <text x={x + SZ_W/6} y={y + SZ_H/4 + 22}
+                        textAnchor="middle" dominantBaseline="middle"
+                        fill="#f59e0b" fontSize={10}>
+                        {s.ace}★
+                      </text>
+                    )}
+                  </g>
+                );
+              })
+            )}
+            {/* Net at bottom */}
+            <line x1={0} y1={SZ_H - 2} x2={SZ_W} y2={SZ_H - 2} stroke="#f97316" strokeWidth={2} strokeDasharray="6 3" opacity={0.7} />
+          </svg>
+          <span className="text-[9px] font-bold uppercase tracking-widest text-orange-400">NET</span>
+        </div>
+      </div>
+
+      {/* Zone breakdown table */}
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-slate-500 border-b border-slate-800">
+            <th className="text-left py-1 font-semibold">Zone</th>
+            <th className="text-right py-1 font-semibold">Total</th>
+            <th className="text-right py-1 font-semibold">ACE</th>
+            <th className="text-right py-1 font-semibold">IN</th>
+            <th className="text-right py-1 font-semibold">ACE%</th>
+            <th className="text-right py-1 font-semibold">IN%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[1,2,3,4,5,6].filter(z => stats[z].total > 0).map(z => {
+            const s = stats[z];
+            const acePct = s.total ? Math.round(s.ace / s.total * 100) : 0;
+            const inPct  = s.total ? Math.round((s.ace + s.in) / s.total * 100) : 0;
+            return (
+              <tr key={z} className="border-b border-slate-800/50 text-slate-300">
+                <td className="py-1 font-semibold text-slate-400">Z{z}</td>
+                <td className="text-right py-1 tabular-nums">{s.total}</td>
+                <td className="text-right py-1 tabular-nums text-amber-400">{s.ace}</td>
+                <td className="text-right py-1 tabular-nums">{s.in}</td>
+                <td className="text-right py-1 tabular-nums">{acePct}%</td>
+                <td className="text-right py-1 tabular-nums">{inPct}%</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="text-[9px] text-slate-600 text-center">Red = high frequency · Blue = low frequency · ★ = ace count</p>
+    </div>
+  );
+}
 
 // ── Box Sparkline ─────────────────────────────────────────────────────────────
 function BoxSparkline({ pointHistory }) {
@@ -275,29 +393,53 @@ function ISvsOOSTable({ data, freeDigData, transAtkData }) {
 
   const rows = [
     {
-      label:     'IS Pass',
+      label:     'IS ATK',
       labelCls:  'text-emerald-700',
-      fmt:       (r) => cntFmt(n(data.byRotation[r]?.is_pa)),
-      total:     ()  => cntFmt(n(data.total.is_pa)),
+      fmt:       (r) => cntFmt(n(data.byRotation[r]?.is?.ta)),
+      total:     ()  => cntFmt(n(data.total.is?.ta)),
     },
     {
-      label:     'IS Win%',
+      label:     'IS K%',
       labelCls:  'text-emerald-700',
-      fmt:       (r) => pctFmt(data.byRotation[r]?.is_won ?? 0, data.byRotation[r]?.is_pa ?? 0),
-      total:     ()  => pctFmt(data.total.is_won, data.total.is_pa),
+      fmt:       (r) => pctFmt(data.byRotation[r]?.is?.k ?? 0, data.byRotation[r]?.is?.ta ?? 0),
+      total:     ()  => pctFmt(data.total.is?.k, data.total.is?.ta),
+    },
+    {
+      label:     'IS HIT%',
+      labelCls:  'text-emerald-700',
+      fmt:       (r) => effFmt(data.byRotation[r]?.is?.hit_pct),
+      total:     ()  => effFmt(data.total.is?.hit_pct),
+    },
+    {
+      label:     'IS WIN%',
+      labelCls:  'text-emerald-700',
+      fmt:       (r) => pctFmt(data.byRotation[r]?.is?.win ?? 0, data.byRotation[r]?.is?.ta ?? 0),
+      total:     ()  => pctFmt(data.total.is?.win, data.total.is?.ta),
     },
     null,
     {
-      label:     'OOS Pass',
+      label:     'OOS ATK',
       labelCls:  'text-amber-700',
-      fmt:       (r) => cntFmt(n(data.byRotation[r]?.oos_pa)),
-      total:     ()  => cntFmt(n(data.total.oos_pa)),
+      fmt:       (r) => cntFmt(n(data.byRotation[r]?.oos?.ta)),
+      total:     ()  => cntFmt(n(data.total.oos?.ta)),
     },
     {
-      label:     'OOS Win%',
+      label:     'OOS K%',
       labelCls:  'text-amber-700',
-      fmt:       (r) => pctFmt(data.byRotation[r]?.oos_won ?? 0, data.byRotation[r]?.oos_pa ?? 0),
-      total:     ()  => pctFmt(data.total.oos_won, data.total.oos_pa),
+      fmt:       (r) => pctFmt(data.byRotation[r]?.oos?.k ?? 0, data.byRotation[r]?.oos?.ta ?? 0),
+      total:     ()  => pctFmt(data.total.oos?.k, data.total.oos?.ta),
+    },
+    {
+      label:     'OOS HIT%',
+      labelCls:  'text-amber-700',
+      fmt:       (r) => effFmt(data.byRotation[r]?.oos?.hit_pct),
+      total:     ()  => effFmt(data.total.oos?.hit_pct),
+    },
+    {
+      label:     'OOS WIN%',
+      labelCls:  'text-amber-700',
+      fmt:       (r) => pctFmt(data.byRotation[r]?.oos?.win ?? 0, data.byRotation[r]?.oos?.ta ?? 0),
+      total:     ()  => pctFmt(data.total.oos?.win, data.total.oos?.ta),
     },
     null,
     {
@@ -320,16 +462,22 @@ function ISvsOOSTable({ data, freeDigData, transAtkData }) {
       total:     ()  => cntFmt(n(transAtkData.free.total.ta)),
     },
     {
+      label:     'FREE K%',
+      labelCls:  'text-cyan-600',
+      fmt:       (r) => pctFmt(transAtkData.free.byRotation[r]?.k ?? 0, transAtkData.free.byRotation[r]?.ta ?? 0),
+      total:     ()  => pctFmt(transAtkData.free.total.k, transAtkData.free.total.ta),
+    },
+    {
       label:     'FREE HIT%',
       labelCls:  'text-cyan-600',
       fmt:       (r) => effFmt(transAtkData.free.byRotation[r]?.hit_pct),
       total:     ()  => effFmt(transAtkData.free.total.hit_pct),
     },
     {
-      label:     'FREE K%',
+      label:     'FREE WIN%',
       labelCls:  'text-cyan-600',
-      fmt:       (r) => pctFmt(transAtkData.free.byRotation[r]?.k ?? 0, transAtkData.free.byRotation[r]?.ta ?? 0),
-      total:     ()  => pctFmt(transAtkData.free.total.k, transAtkData.free.total.ta),
+      fmt:       (r) => pctFmt(transAtkData.free.byRotation[r]?.win ?? 0, transAtkData.free.byRotation[r]?.ta ?? 0),
+      total:     ()  => pctFmt(transAtkData.free.total.win, transAtkData.free.total.ta),
     },
     null,
     {
@@ -339,16 +487,22 @@ function ISvsOOSTable({ data, freeDigData, transAtkData }) {
       total:     ()  => cntFmt(n(transAtkData.transition.total.ta)),
     },
     {
+      label:     'TRANS K%',
+      labelCls:  'text-violet-600',
+      fmt:       (r) => pctFmt(transAtkData.transition.byRotation[r]?.k ?? 0, transAtkData.transition.byRotation[r]?.ta ?? 0),
+      total:     ()  => pctFmt(transAtkData.transition.total.k, transAtkData.transition.total.ta),
+    },
+    {
       label:     'TRANS HIT%',
       labelCls:  'text-violet-600',
       fmt:       (r) => effFmt(transAtkData.transition.byRotation[r]?.hit_pct),
       total:     ()  => effFmt(transAtkData.transition.total.hit_pct),
     },
     {
-      label:     'TRANS K%',
+      label:     'TRANS WIN%',
       labelCls:  'text-violet-600',
-      fmt:       (r) => pctFmt(transAtkData.transition.byRotation[r]?.k ?? 0, transAtkData.transition.byRotation[r]?.ta ?? 0),
-      total:     ()  => pctFmt(transAtkData.transition.total.k, transAtkData.transition.total.ta),
+      fmt:       (r) => pctFmt(transAtkData.transition.byRotation[r]?.win ?? 0, transAtkData.transition.byRotation[r]?.ta ?? 0),
+      total:     ()  => pctFmt(transAtkData.transition.total.win, transAtkData.transition.total.ta),
     },
   ];
 
@@ -563,9 +717,11 @@ function OffenseBalanceChart({ setPlayerStats, matchPlayerStats, positionMap }) 
 }
 
 // Stable empty fallbacks — hoisted to avoid recreation on every render
-const EMPTY_ISVSOOS = { byRotation: Object.fromEntries(Array.from({length:6},(_,i)=>[i+1,{is_pa:0,is_won:0,oos_pa:0,oos_won:0}])), total: {is_pa:0,is_won:0,oos_pa:0,oos_won:0} };
+const _emptyISSlot  = () => ({ ta:0, k:0, ae:0, win:0, k_pct:null, hit_pct:null, win_pct:null });
+const _emptyISGroup = () => ({ is: _emptyISSlot(), oos: _emptyISSlot() });
+const EMPTY_ISVSOOS = { byRotation: Object.fromEntries(Array.from({length:6},(_,i)=>[i+1,_emptyISGroup()])), total: _emptyISGroup() };
 const EMPTY_FREEDIG  = { byRotation: Object.fromEntries(Array.from({length:6},(_,i)=>[i+1,{fb_dig:0,fb_won:0}])), total: {fb_dig:0,fb_won:0} };
-const _emptyAtkSlot  = () => ({ ta:0, k:0, ae:0, hit_pct:null, k_pct:null });
+const _emptyAtkSlot  = () => ({ ta:0, k:0, ae:0, win:0, hit_pct:null, k_pct:null, win_pct:null });
 const _emptyAtkGroup = () => ({ total: _emptyAtkSlot(), byRotation: Object.fromEntries(Array.from({length:6},(_,i)=>[i+1,_emptyAtkSlot()])) });
 const EMPTY_TRANSATK = { free: _emptyAtkGroup(), transition: _emptyAtkGroup() };
 
@@ -762,7 +918,7 @@ function RecordsProgressPanel({ records, playerStats, teamStats, lineup, roster 
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAlerts = [], records = [], defaultTab = null }) {
+export const LiveStatsModal = memo(function LiveStatsModal({ open, onClose, teamName, opponentName, recordAlerts = [], records = [], defaultTab = null }) {
   const [activeView, setActiveView] = useState('box');
   const [activeTab,  setActiveTab]  = useState('POINTS');
   const [serveView,  setServeView]  = useState('ALL');
@@ -775,18 +931,25 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
     }
   }, [open, defaultTab]);
 
-  const ourScore     = useMatchStore((s) => s.ourScore);
-  const oppScore     = useMatchStore((s) => s.oppScore);
-  const ourSetsWon   = useMatchStore((s) => s.ourSetsWon);
-  const oppSetsWon   = useMatchStore((s) => s.oppSetsWon);
-  const setNumber    = useMatchStore((s) => s.setNumber);
-  const format       = useMatchStore((s) => s.format);
-  const matchId      = useMatchStore((s) => s.matchId);
-  const teamId        = useMatchStore((s) => s.teamId);
-  const pointHistory  = useMatchStore((s) => s.pointHistory);
-  const lineup        = useMatchStore((s) => s.lineup);
-  const currentSetId  = useMatchStore((s) => s.currentSetId);
-  const committedContacts = useMatchStore((s) => s.committedContacts);
+  const {
+    ourScore, oppScore, ourSetsWon, oppSetsWon, setNumber, format,
+    matchId, teamId, pointHistory, lineup,
+    currentSetId, committedContacts, committedRallies,
+  } = useMatchStore(useShallow((s) => ({
+    ourScore:          s.ourScore,
+    oppScore:          s.oppScore,
+    ourSetsWon:        s.ourSetsWon,
+    oppSetsWon:        s.oppSetsWon,
+    setNumber:         s.setNumber,
+    format:            s.format,
+    matchId:           s.matchId,
+    teamId:            s.teamId,
+    pointHistory:      s.pointHistory,
+    lineup:            s.lineup,
+    currentSetId:      s.currentSetId,
+    committedContacts: s.committedContacts,
+    committedRallies:  s.committedRallies,
+  })));
 
   const { teamStats, oppStats, playerStats, pointQuality } = useMatchStats();
 
@@ -806,11 +969,6 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
       : [],
     [allMatchSets]
   );
-  const currentSetRallies = useLiveQuery(
-    () => currentSetId ? db.rallies.where('set_id').equals(currentSetId).toArray() : [],
-    [currentSetId]
-  );
-
   const roster = useLiveQuery(
     () => teamId ? db.players.where('team_id').equals(teamId).filter((p) => p.is_active).toArray() : [],
     [teamId]
@@ -860,7 +1018,7 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
     return result;
   }
 
-  const setRotPts   = useMemo(() => buildRotPts(currentSetRallies),  [currentSetRallies]);
+  const setRotPts   = useMemo(() => buildRotPts(committedRallies),  [committedRallies]);
   const matchRotPts = useMemo(() => buildRotPts(allMatchRallies),    [allMatchRallies]);
 
   const setRotContacts   = useMemo(
@@ -875,9 +1033,9 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
   const setISvsOOS = useMemo(
     () => computeISvsOOS(
       committedContacts.filter((c) => c.set_id === currentSetId),
-      currentSetRallies ?? []
+      committedRallies
     ),
-    [committedContacts, currentSetId, currentSetRallies]
+    [committedContacts, currentSetId, committedRallies]
   );
   const matchISvsOOS = useMemo(
     () => computeISvsOOS(allMatchContacts ?? [], allMatchRallies ?? []),
@@ -887,9 +1045,9 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
   const setFreeDigWin = useMemo(
     () => computeFreeDigWin(
       committedContacts.filter((c) => c.set_id === currentSetId),
-      currentSetRallies ?? []
+      committedRallies
     ),
-    [committedContacts, currentSetId, currentSetRallies]
+    [committedContacts, currentSetId, committedRallies]
   );
   const matchFreeDigWin = useMemo(
     () => computeFreeDigWin(allMatchContacts ?? [], allMatchRallies ?? []),
@@ -897,13 +1055,20 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
   );
 
   const setTransAtk = useMemo(
-    () => computeTransitionAttack(committedContacts.filter((c) => c.set_id === currentSetId)),
-    [committedContacts, currentSetId]
+    () => computeTransitionAttack(committedContacts.filter((c) => c.set_id === currentSetId), committedRallies),
+    [committedContacts, currentSetId, committedRallies]
   );
   const matchTransAtk = useMemo(
-    () => computeTransitionAttack(allMatchContacts ?? []),
-    [allMatchContacts]
+    () => computeTransitionAttack(allMatchContacts ?? [], allMatchRallies ?? []),
+    [allMatchContacts, allMatchRallies]
   );
+
+  const serveZoneContacts = useMemo(() => {
+    const src = scope === 'set'
+      ? committedContacts.filter(c => c.set_id === currentSetId)
+      : (allMatchContacts ?? []);
+    return src.filter(c => c.action === 'serve' && c.zone != null);
+  }, [scope, committedContacts, currentSetId, allMatchContacts]);
 
   // All hooks must be called before any early return
   const rows = useMemo(() =>
@@ -1099,6 +1264,9 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
                 : (
                   <>
                     <StatTable columns={activeColumns} rows={rows} />
+                    {activeTab === 'SERVING' && (
+                      <ServeZoneStatsPanel contacts={serveZoneContacts} />
+                    )}
                     {activeTab === 'ATTACKING' && (
                       <div className="border-t border-slate-800">
                         <OffenseBalanceChart
@@ -1118,4 +1286,4 @@ export function LiveStatsModal({ open, onClose, teamName, opponentName, recordAl
       </div>
     </div>
   );
-}
+});

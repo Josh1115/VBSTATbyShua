@@ -2,6 +2,16 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('VBAPPv2');
 
+// v7: add compound indexes for common cross-column query patterns
+//   contacts [match_id+set_id]    → set-scoped stat queries (avoids full-match scan)
+//   contacts [match_id+player_id] → per-player queries within a match
+//   matches  [season_id+date]     → season schedule sorted by date
+//   matches  [status+date]        → find live/recent matches efficiently
+db.version(7).stores({
+  contacts: '++id, match_id, player_id, action, set_id, rally_id, rotation_num, [match_id+set_id], [match_id+player_id]',
+  matches:  '++id, season_id, status, date, [season_id+date], [status+date]',
+});
+
 db.version(6).stores({
   practice_sessions: '++id, team_id, tool_type, date',
 });

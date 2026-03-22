@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { getBoolStorage, getIntStorage, setStorageItem, STORAGE_KEYS } from '../../utils/storage';
 import { db } from '../../db/schema';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { useUiStore, selectShowToast } from '../../store/uiStore';
 import { fmtDateShort, calcAPR } from '../../stats/formatters';
+import { NFHS } from '../../constants';
 
 const RATING_BG = {
   0: 'bg-red-600',
@@ -11,6 +13,12 @@ const RATING_BG = {
   2: 'bg-yellow-500',
   3: 'bg-emerald-500',
 };
+
+const DRAFT_KEY = 'vbstat_draft_practice_game';
+
+function readDraft() {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { return null; }
+}
 
 function StatChip({ label, value, color = 'text-white' }) {
   return (
@@ -35,13 +43,14 @@ function ActionBtn({ label, sub, onClick, color = 'bg-slate-700' }) {
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
-function SetupView({ onStart }) {
+function SetupView({ onStart, onResume, onDiscardDraft }) {
   const [teamId,   setTeamId]   = useState(() => {
-    const saved = parseInt(localStorage.getItem('vbstat_default_team_id'), 10);
+    const saved = getIntStorage(STORAGE_KEYS.DEFAULT_TEAM_ID);
     return !isNaN(saved) ? saved : null;
   });
   const [opponent, setOpponent] = useState('');
   const [checked,  setChecked]  = useState(new Set());
+  const [draft]                 = useState(readDraft);
 
   const teams   = useLiveQuery(() => db.teams.orderBy('name').toArray(), []);
   const players = useLiveQuery(
@@ -66,6 +75,22 @@ function SetupView({ onStart }) {
 
   return (
     <div className="p-4 space-y-4">
+      {/* Resume draft banner */}
+      {draft && (
+        <div className="bg-orange-900/40 border border-orange-700 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-orange-200">Resume unsaved game?</p>
+            <p className="text-xs text-orange-300/70 mt-0.5 truncate">
+              vs {draft.opponent || 'Scrimmage'} · Set {(draft.sets?.length ?? 0) + 1}
+            </p>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button onClick={onDiscardDraft} className="text-xs text-slate-400 font-semibold px-2 py-1">Discard</button>
+            <button onClick={() => onResume(draft)} className="text-xs bg-orange-600 text-white font-bold rounded-lg px-3 py-1.5">Resume</button>
+          </div>
+        </div>
+      )}
+
       {/* Team picker */}
       <div className="bg-surface rounded-xl p-4 space-y-2">
         <label className="text-xs text-slate-400 uppercase tracking-wide font-semibold block">Team</label>
@@ -182,22 +207,44 @@ function SetupView({ onStart }) {
 
 // ─── Game screen ──────────────────────────────────────────────────────────────
 
-function GameView({ players: initPlayers, teamId, opponent }) {
+function GameView({ players: initPlayers, teamId, opponent, initialState }) {
+  const flipLayout = getBoolStorage(STORAGE_KEYS.FLIP_LAYOUT);
+
   const [players,   setPlayers]   = useState(() =>
-    initPlayers.map((p) => ({
-      id: p.id, name: p.name, jersey: p.jersey_number,
+    initialState?.players ?? initPlayers.map((p) => ({
+      id: p.id, name: p.name, jersey: p.jersey_number ?? p.jersey,
       kills: 0, errors: 0, aces: 0, serveErrors: 0,
       digs: 0, blocks: 0, passes: [],
     }))
   );
-  const [sets,      setSets]      = useState([]);
-  const [ourScore,  setOurScore]  = useState(0);
-  const [oppScore,  setOppScore]  = useState(0);
+  const [sets,      setSets]      = useState(initialState?.sets      ?? []);
+  const [ourScore,  setOurScore]  = useState(initialState?.ourScore  ?? 0);
+  const [oppScore,  setOppScore]  = useState(initialState?.oppScore  ?? 0);
   const [activeIdx, setActiveIdx] = useState(0);
   const [undoStack, setUndoStack] = useState([]);
   const showToast = useUiStore(selectShowToast);
 
-  // Apply a reversible action
+  // Auto-save draft on every game state change
+  useEffect(() => {
+    setStorageItem(DRAFT_KEY, JSON.stringify({
+      players, sets, ourScore, oppScore, opponent, teamId,
+    }));
+  }, [players, sets, ourScore, oppScore, opponent, teamId]);
+
+  // Auto-end set when win condition is met (NFHS rules)
+  useEffect(() => {
+    const setNum = sets.length + 1;
+    const target = setNum === 5 ? NFHS.FIFTH_SET_WIN_SCORE : NFHS.SET_WIN_SCORE;
+    const maxScore = Math.max(ourScore, oppScore);
+    const diff = Math.abs(ourScore - oppScore);
+    if (maxScore >= target && diff >= NFHS.WIN_BY) {
+      setSets((s) => [...s, { us: ourScore, opp: oppScore }]);
+      setOurScore(0);
+      setOppScore(0);
+      setUndoStack([]);
+    }
+  }, [ourScore, oppScore]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function applyAction(action) {
     if (action.side === 'us')  setOurScore((s) => s + 1);
     if (action.side === 'opp') setOppScore((s) => s + 1);
@@ -226,7 +273,6 @@ function GameView({ players: initPlayers, teamId, opponent }) {
     setUndoStack((h) => h.slice(0, -1));
   }
 
-  // Shorthand: player stat + optional point side
   function tap(stat, side = null) {
     applyAction({ side, playerIdx: activeIdx, stat });
   }
@@ -256,22 +302,34 @@ function GameView({ players: initPlayers, teamId, opponent }) {
       label:     `vs ${oppLabel}${result}`,
       data:      { opponent: oppLabel, sets: finalSets, players },
     });
+    setStorageItem(DRAFT_KEY, null);
     showToast('Session saved', 'success');
   }
 
-  const active    = players[activeIdx];
-  const apr       = calcAPR(active.passes);
-  const hasData   = sets.length > 0 || ourScore > 0 || oppScore > 0;
+  const active  = players[activeIdx];
+  const apr     = calcAPR(active.passes);
+  const hasData = sets.length > 0 || ourScore > 0 || oppScore > 0;
+
+  // Scoreboard columns — respect flipLayout setting
+  const usCol = (
+    <div className="text-center flex-1">
+      <div className="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1">Us</div>
+      <div className="text-5xl font-black font-mono text-primary leading-none">{ourScore}</div>
+    </div>
+  );
+  const oppCol = (
+    <div className="text-center flex-1">
+      <div className="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1 truncate">{opponent || 'Opp'}</div>
+      <div className="text-5xl font-black font-mono leading-none">{oppScore}</div>
+    </div>
+  );
 
   return (
     <div className="p-4 space-y-4">
       {/* Score header */}
       <div className="bg-surface rounded-xl p-4 space-y-3">
         <div className="flex items-start">
-          <div className="text-center flex-1">
-            <div className="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1">Us</div>
-            <div className="text-5xl font-black font-mono text-primary leading-none">{ourScore}</div>
-          </div>
+          {flipLayout ? oppCol : usCol}
           <div className="flex flex-col items-center gap-1 px-4 pt-1 min-w-0">
             <div className="text-xs text-slate-500 font-semibold whitespace-nowrap">Set {sets.length + 1}</div>
             {sets.length > 0 && (
@@ -285,10 +343,7 @@ function GameView({ players: initPlayers, teamId, opponent }) {
               End Set
             </button>
           </div>
-          <div className="text-center flex-1">
-            <div className="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1 truncate">{opponent || 'Opp'}</div>
-            <div className="text-5xl font-black font-mono leading-none">{oppScore}</div>
-          </div>
+          {flipLayout ? usCol : oppCol}
         </div>
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -403,6 +458,20 @@ function GameView({ players: initPlayers, teamId, opponent }) {
 export function PracticeGamePage() {
   const [session, setSession] = useState(null);
 
+  function handleResume(draft) {
+    setSession({
+      players: draft.players ?? [],
+      teamId: draft.teamId,
+      opponent: draft.opponent ?? '',
+      initialState: { players: draft.players, sets: draft.sets, ourScore: draft.ourScore, oppScore: draft.oppScore },
+    });
+  }
+
+  function handleReset() {
+    setSession(null);
+    setStorageItem(DRAFT_KEY, null);
+  }
+
   return (
     <div>
       <PageHeader
@@ -410,18 +479,24 @@ export function PracticeGamePage() {
         backTo={session ? null : '/tools'}
         action={
           session && (
-            <button
-              onClick={() => setSession(null)}
-              className="text-sm text-red-400 font-semibold px-2 py-1"
-            >
+            <button onClick={handleReset} className="text-sm text-red-400 font-semibold px-2 py-1">
               Reset
             </button>
           )
         }
       />
       {session
-        ? <GameView players={session.players} teamId={session.teamId} opponent={session.opponent} />
-        : <SetupView onStart={setSession} />
+        ? <GameView
+            players={session.players}
+            teamId={session.teamId}
+            opponent={session.opponent}
+            initialState={session.initialState}
+          />
+        : <SetupView
+            onStart={setSession}
+            onResume={handleResume}
+            onDiscardDraft={() => setStorageItem(DRAFT_KEY, null)}
+          />
       }
     </div>
   );

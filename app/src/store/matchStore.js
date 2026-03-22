@@ -1,6 +1,8 @@
 import { create } from 'zustand';
-import { ACTION, RESULT, SIDE, SET_STATUS, MATCH_STATUS, NFHS } from '../constants';
+import { ACTION, RESULT, SIDE, FORMAT, SET_STATUS, MATCH_STATUS, NFHS } from '../constants';
 import { db } from '../db/schema';
+import { useUiStore } from './uiStore';
+import { getIntStorage, STORAGE_KEYS } from '../utils/storage';
 
 const ACTION_HISTORY_LIMIT = 10;
 
@@ -33,8 +35,75 @@ const rotateBwd = (lineup) => lineup.map((_, i) => ({
   positionLabel: lineup[(i + 5) % 6].positionLabel,
 }));
 
-function checkSetWin(ourScore, oppScore, setNumber) {
-  const target = setNumber >= 5 ? NFHS.FIFTH_SET_WIN_SCORE : NFHS.SET_WIN_SCORE;
+// Pure helper — handles libero auto-swap-in/out on rotation.
+// Called only when rotate===true and liberoId is set.
+// Returns updated lineup and libero tracking fields.
+function autoSwapLibero(s, newLineup) {
+  let lineup = newLineup;
+  let { liberoOnCourt, liberoReplacedPlayerId, liberoReplacedName,
+        liberoReplacedJersey, liberoReplacedPositionLabel } = s;
+
+  if (liberoOnCourt) {
+    const liberoIdx = lineup.findIndex((sl) => sl.playerId === s.liberoId);
+    if (liberoIdx !== -1) {
+      const liberoPos = lineup[liberoIdx].position;
+      if (liberoPos >= 2 && liberoPos <= 4) {
+        lineup = lineup.map((sl, i) =>
+          i === liberoIdx
+            ? { ...sl, playerId: liberoReplacedPlayerId, playerName: liberoReplacedName, jersey: liberoReplacedJersey, positionLabel: liberoReplacedPositionLabel }
+            : sl
+        );
+        liberoOnCourt = false;
+      }
+    }
+  } else if (liberoReplacedPlayerId && s.liberoName) {
+    const mbIdx = lineup.findIndex((sl) => sl.playerId === liberoReplacedPlayerId);
+    if (mbIdx !== -1) {
+      const mbPos = lineup[mbIdx].position;
+      if (mbPos === 1 || mbPos === 5 || mbPos === 6) {
+        lineup = lineup.map((sl, i) =>
+          i === mbIdx
+            ? { ...sl, playerId: s.liberoId, playerName: s.liberoName, jersey: s.liberoJersey, positionLabel: 'L' }
+            : sl
+        );
+        liberoOnCourt = true;
+      }
+    }
+  }
+
+  return { lineup, liberoOnCourt, liberoReplacedPlayerId, liberoReplacedName, liberoReplacedJersey, liberoReplacedPositionLabel };
+}
+
+// Common per-set reset fields shared between resetCurrentSet() and endSet().
+// Returns a fresh object each call so callers get their own {} and [] references.
+const makeSetResetState = () => ({
+  ourScore:                    0,
+  oppScore:                    0,
+  ourTimeouts:                 0,
+  oppTimeouts:                 0,
+  subsUsed:                    0,
+  subPairs:                    {},
+  exhaustedPlayerIds:          [],
+  rallyCount:                  0,
+  rotationNum:                 1,
+  committedContacts:           [],
+  committedRallies:            [],
+  actionHistory:               [],
+  pendingHblk:                 null,
+  lastFeedItem:                null,
+  rallyPhase:                  'pre_serve',
+  currentRun:                  { side: null, count: 0 },
+  pointHistory:                [],
+  liberoReplacedPositionLabel: '',
+  pendingServeContact:         null,
+  serveReticles:               [],
+  serveReceiveFormations:      null,
+  plannedSubs:                 [],
+});
+
+function checkSetWin(ourScore, oppScore, setNumber, format, lastSetScore) {
+  const decidingSet = format === FORMAT.BEST_OF_3 ? 3 : 5;
+  const target = setNumber === decidingSet ? (lastSetScore ?? 15) : NFHS.SET_WIN_SCORE;
   if (ourScore >= target && ourScore - oppScore >= NFHS.WIN_BY) return SIDE.US;
   if (oppScore >= target && oppScore - ourScore >= NFHS.WIN_BY) return SIDE.THEM;
   return null;
@@ -119,6 +188,7 @@ const INITIAL_STATE = {
   liberoReplacedPositionLabel: '',
 
   committedContacts:     [],   // in-memory mirror of Dexie contacts for live stats
+  committedRallies:      [],   // in-memory mirror of Dexie rallies for current set
   rallyCount:            0,
   rotationNum:           1,
 
@@ -130,16 +200,22 @@ const INITIAL_STATE = {
   pointHistory:          [], // { side: 'us'|'them' }[] — one entry per point this set
   pendingSetWin:         null, // 'us' | 'them' | null — set win detected, awaiting confirmation
   format:                null, // 'best_of_3' | 'best_of_5'
+  lastSetScore:          15,   // win score for the deciding set (15 or 25)
   playerNicknames:       {},   // { [playerId]: nickname string } — populated at lineup load
+  pendingServeContact:   null, // { contactId, result } | null — triggers serve zone modal
+  serveReticles:         [],   // [{ contactId, result, court_x, court_y, zone }]
+
+  serveReceiveFormations: null, // { [rotationNum]: number[6] } | null — soIdx per grid cell
+  plannedSubs:            [],   // [{ rotation, player_out_so, player_in_id }]
 };
 
 export const useMatchStore = create((set, get) => ({
   ...INITIAL_STATE,
 
-  setMatch:   (matchId, setId, teamId, format) => {
-    const saved = parseInt(localStorage.getItem('vbstat_max_subs'), 10);
+  setMatch:   (matchId, setId, teamId, format, lastSetScore) => {
+    const saved = getIntStorage(STORAGE_KEYS.MAX_SUBS);
     const maxSubsPerSet = !isNaN(saved) && saved > 0 ? saved : NFHS.MAX_SUBS_PER_SET;
-    set({ matchId, currentSetId: setId, teamId, format, maxSubsPerSet });
+    set({ matchId, currentSetId: setId, teamId, format, lastSetScore: lastSetScore ?? 15, maxSubsPerSet });
   },
   resetMatch: () => set(INITIAL_STATE),
   setLineup:          (lineup) => set({ lineup }),
@@ -169,24 +245,35 @@ export const useMatchStore = create((set, get) => ({
       if (serveSide === SIDE.US) { newServeSide = SIDE.THEM; }
     }
 
-    const rallyId = await db.rallies.add({
-      set_id:       s.currentSetId,
-      rally_number: rallyCount,
-      serve_side:   serveSide,
-      point_winner: side,
-      our_rotation: rotationNum,
-      timestamp:    Date.now(),
-    });
-
     const prevRun  = s.currentRun;
     const newRun   = prevRun.side === side
       ? { side, count: Math.min(25, prevRun.count + 1) }
       : { side, count: 1 };
 
+    const newRotationNum = rotate ? (rotationNum % 6) + 1 : rotationNum;
+    let newLineup = rotate ? rotateFwd(lineup) : lineup;
+
+    // Auto libero swap — only on rotations where we have a designated libero
+    const liberoState = (rotate && s.liberoId)
+      ? autoSwapLibero(s, newLineup)
+      : {
+          lineup:                      newLineup,
+          liberoOnCourt:               s.liberoOnCourt,
+          liberoReplacedPlayerId:      s.liberoReplacedPlayerId,
+          liberoReplacedName:          s.liberoReplacedName,
+          liberoReplacedJersey:        s.liberoReplacedJersey,
+          liberoReplacedPositionLabel: s.liberoReplacedPositionLabel,
+        };
+    const { lineup: finalLineup, liberoOnCourt, liberoReplacedPlayerId,
+            liberoReplacedName, liberoReplacedJersey, liberoReplacedPositionLabel } = liberoState;
+
+    // 1. Push action entry with null rallyId — backfilled after DB write
+    const actionKey = crypto.randomUUID();
     if (side === SIDE.US) {
       pushAction(get, set, {
         type:                        'point_us',
-        rallyId:                     rallyId,
+        rallyId:                     null,
+        _actionKey:                  actionKey,
         prevServeSide:               serveSide,
         prevRallyPhase:              s.rallyPhase,
         prevLineup:                  lineup,
@@ -201,65 +288,21 @@ export const useMatchStore = create((set, get) => ({
     } else {
       pushAction(get, set, {
         type:           'point_them',
-        rallyId:        rallyId,
+        rallyId:        null,
+        _actionKey:     actionKey,
         prevServeSide:  serveSide,
         prevRallyPhase: s.rallyPhase,
         prevRun,
       });
     }
 
-    const newRotationNum = rotate ? (rotationNum % 6) + 1 : rotationNum;
-    let newLineup = rotate ? rotateFwd(lineup) : lineup;
-
-    // Auto libero swap — only on rotations where we have a designated libero
-    let liberoOnCourt         = s.liberoOnCourt;
-    let liberoReplacedPlayerId      = s.liberoReplacedPlayerId;
-    let liberoReplacedName          = s.liberoReplacedName;
-    let liberoReplacedJersey        = s.liberoReplacedJersey;
-    let liberoReplacedPositionLabel = s.liberoReplacedPositionLabel;
-
-    if (rotate && s.liberoId) {
-      if (liberoOnCourt) {
-        // Check whether libero rotated into the front row (positions 2, 3, 4)
-        const liberoIdx = newLineup.findIndex((sl) => sl.playerId === s.liberoId);
-        if (liberoIdx !== -1) {
-          const liberoPos = newLineup[liberoIdx].position;
-          if (liberoPos >= 2 && liberoPos <= 4) {
-            // Auto-swap OUT: replace libero slot with their paired MB
-            newLineup = newLineup.map((sl, i) =>
-              i === liberoIdx
-                ? { ...sl, playerId: liberoReplacedPlayerId, playerName: liberoReplacedName, jersey: liberoReplacedJersey, positionLabel: liberoReplacedPositionLabel }
-                : sl
-            );
-            liberoOnCourt = false;
-            // Keep liberoReplaced* pointing to the MB so auto-swap-in can find them
-          }
-        }
-      } else if (liberoReplacedPlayerId && s.liberoName) {
-        // Libero on bench — check whether their paired MB rotated into the back row (positions 1, 5, 6)
-        const mbIdx = newLineup.findIndex((sl) => sl.playerId === liberoReplacedPlayerId);
-        if (mbIdx !== -1) {
-          const mbPos = newLineup[mbIdx].position;
-          if (mbPos === 1 || mbPos === 5 || mbPos === 6) {
-            // Auto-swap IN: libero replaces MB in back row
-            newLineup = newLineup.map((sl, i) =>
-              i === mbIdx
-                ? { ...sl, playerId: s.liberoId, playerName: s.liberoName, jersey: s.liberoJersey, positionLabel: 'L' }
-                : sl
-            );
-            liberoOnCourt = true;
-            // liberoReplaced* already points to MB — no change needed
-          }
-        }
-      }
-    }
-
+    // 2. Update UI immediately — score, rotation, libero swap all visible at once
     set({
       rallyPhase:    'pre_serve',
       ourScore,
       oppScore,
       serveSide:     newServeSide,
-      lineup:        newLineup,
+      lineup:        finalLineup,
       rallyCount:    rallyCount + 1,
       rotationNum:   newRotationNum,
       currentRun:    newRun,
@@ -269,10 +312,58 @@ export const useMatchStore = create((set, get) => ({
       liberoReplacedName,
       liberoReplacedJersey,
       liberoReplacedPositionLabel,
+      committedRallies: [...s.committedRallies, {
+        set_id:       s.currentSetId,
+        rally_number: rallyCount,
+        serve_side:   serveSide,
+        point_winner: side,
+        our_rotation: rotationNum,
+      }],
     });
 
-    const winner = checkSetWin(ourScore, oppScore, setNumber);
+    const winner = checkSetWin(ourScore, oppScore, setNumber, s.format, s.lastSetScore);
     if (winner) set({ pendingSetWin: winner });
+
+    // 3. Persist to DB — roll back optimistic state on failure
+    try {
+      const rallyId = await db.rallies.add({
+        set_id:       s.currentSetId,
+        rally_number: rallyCount,
+        serve_side:   serveSide,
+        point_winner: side,
+        our_rotation: rotationNum,
+        timestamp:    Date.now(),
+      });
+
+      // 4. Backfill real rallyId so undo can delete the correct row
+      set((cur) => ({
+        actionHistory: cur.actionHistory.map((a) =>
+          a._actionKey === actionKey ? { ...a, rallyId } : a
+        ),
+      }));
+    } catch (err) {
+      // DB write failed — roll back the optimistic UI update
+      set({
+        rallyPhase:                  s.rallyPhase,
+        ourScore:                    s.ourScore,
+        oppScore:                    s.oppScore,
+        serveSide:                   s.serveSide,
+        lineup:                      s.lineup,
+        rallyCount:                  s.rallyCount,
+        rotationNum:                 s.rotationNum,
+        currentRun:                  s.currentRun,
+        pointHistory:                s.pointHistory,
+        committedRallies:            s.committedRallies,
+        pendingSetWin:               s.pendingSetWin,
+        liberoOnCourt:               s.liberoOnCourt,
+        liberoReplacedPlayerId:      s.liberoReplacedPlayerId,
+        liberoReplacedName:          s.liberoReplacedName,
+        liberoReplacedJersey:        s.liberoReplacedJersey,
+        liberoReplacedPositionLabel: s.liberoReplacedPositionLabel,
+        actionHistory:               s.actionHistory,
+      });
+      useUiStore.getState().showToast('Score not saved — storage error. Please try again.', 'error');
+    }
   },
 
   clearPendingSetWin: () => set({ pendingSetWin: null }),
@@ -289,14 +380,17 @@ export const useMatchStore = create((set, get) => ({
         if (action.autoSetId) {
           await db.contacts.delete(action.autoSetId);
         } else if (action.assistId) {
-          await db.contacts.update(action.assistId, { result: RESULT.SET });
+          await db.contacts.update(action.assistId, { result: action.prevAssistResult ?? RESULT.ATTEMPT });
         }
         set({
           actionHistory:     rest,
           committedContacts: s.committedContacts
             .filter(c => c.id !== action.contactId && c.id !== action.autoSetId)
-            .map(c => !action.autoSetId && c.id === action.assistId ? { ...c, result: RESULT.SET } : c),
+            .map(c => !action.autoSetId && c.id === action.assistId ? { ...c, result: action.prevAssistResult ?? RESULT.ATTEMPT } : c),
           lastFeedItem: null,
+          serveReticles: s.serveReticles.filter(r => r.contactId !== action.contactId),
+          pendingServeContact: s.pendingServeContact?.contactId === action.contactId
+            ? null : s.pendingServeContact,
         });
         break;
       }
@@ -313,20 +407,31 @@ export const useMatchStore = create((set, get) => ({
         break;
       }
 
+      case 'opp_contact': {
+        await db.contacts.delete(action.contactId);
+        set({
+          actionHistory:     rest,
+          committedContacts: s.committedContacts.filter(c => c.id !== action.contactId),
+          lastFeedItem:      null,
+        });
+        break;
+      }
+
       case 'point_us': {
         if (action.rallyId) await db.rallies.delete(action.rallyId);
         set({
-          actionHistory: rest,
-          ourScore:      Math.max(0, s.ourScore - 1),
-          serveSide:     action.prevServeSide,
-          rallyPhase:    action.prevRallyPhase ?? 'pre_serve',
-          lineup:        action.prevLineup,
-          rotationNum:   action.prevRotation,
-          rallyCount:    Math.max(0, s.rallyCount - 1),
-          pendingHblk:   null,
-          lastFeedItem:  null,
-          currentRun:    action.prevRun ?? { side: null, count: 0 },
-          pointHistory:  s.pointHistory.slice(0, -1),
+          actionHistory:    rest,
+          ourScore:         Math.max(0, s.ourScore - 1),
+          serveSide:        action.prevServeSide,
+          rallyPhase:       action.prevRallyPhase ?? 'pre_serve',
+          lineup:           action.prevLineup,
+          rotationNum:      action.prevRotation,
+          rallyCount:       Math.max(0, s.rallyCount - 1),
+          pendingHblk:      null,
+          lastFeedItem:     null,
+          currentRun:       action.prevRun ?? { side: null, count: 0 },
+          pointHistory:     s.pointHistory.slice(0, -1),
+          committedRallies: s.committedRallies.slice(0, -1),
           ...(action.prevLiberoOnCourt !== undefined && {
             liberoOnCourt:               action.prevLiberoOnCourt,
             liberoReplacedPlayerId:      action.prevLiberoReplacedPlayerId ?? null,
@@ -341,15 +446,16 @@ export const useMatchStore = create((set, get) => ({
       case 'point_them': {
         if (action.rallyId) await db.rallies.delete(action.rallyId);
         set({
-          actionHistory: rest,
-          oppScore:      Math.max(0, s.oppScore - 1),
-          serveSide:     action.prevServeSide,
-          rallyPhase:    action.prevRallyPhase ?? 'pre_serve',
-          rallyCount:    Math.max(0, s.rallyCount - 1),
-          pendingHblk:   null,
-          lastFeedItem:  null,
-          currentRun:    action.prevRun ?? { side: null, count: 0 },
-          pointHistory:  s.pointHistory.slice(0, -1),
+          actionHistory:    rest,
+          oppScore:         Math.max(0, s.oppScore - 1),
+          serveSide:        action.prevServeSide,
+          rallyPhase:       action.prevRallyPhase ?? 'pre_serve',
+          rallyCount:       Math.max(0, s.rallyCount - 1),
+          pendingHblk:      null,
+          lastFeedItem:     null,
+          currentRun:       action.prevRun ?? { side: null, count: 0 },
+          pointHistory:     s.pointHistory.slice(0, -1),
+          committedRallies: s.committedRallies.slice(0, -1),
         });
         break;
       }
@@ -383,12 +489,13 @@ export const useMatchStore = create((set, get) => ({
       case 'libero_swap': {
         await db.substitutions.delete(action.subId);
         set({
-          actionHistory:          rest,
-          liberoOnCourt:          action.prevLiberoOnCourt,
-          lineup:                 action.prevLineup,
-          liberoReplacedPlayerId: action.prevReplacedId,
-          liberoReplacedName:     action.prevReplacedName,
-          liberoReplacedJersey:   action.prevReplacedJersey,
+          actionHistory:               rest,
+          liberoOnCourt:               action.prevLiberoOnCourt,
+          lineup:                      action.prevLineup,
+          liberoReplacedPlayerId:      action.prevReplacedId,
+          liberoReplacedName:          action.prevReplacedName,
+          liberoReplacedJersey:        action.prevReplacedJersey,
+          liberoReplacedPositionLabel: action.prevReplacedPositionLabel ?? '',
         });
         break;
       }
@@ -401,6 +508,7 @@ export const useMatchStore = create((set, get) => ({
       match_id:     s.matchId,
       set_id:       s.currentSetId,
       rotation_num: s.rotationNum,
+      rally_number: s.rallyCount,
       serve_side:   s.serveSide,
       timestamp:    Date.now(),
       ...contactData,
@@ -409,15 +517,16 @@ export const useMatchStore = create((set, get) => ({
 
     let newCommittedContacts = [...s.committedContacts, { ...contactFull, id }];
 
-    let assistId   = null;
-    let autoSetId  = null;
+    let assistId        = null;
+    let autoSetId       = null;
+    let prevAssistResult = null;
 
     if (contactData.action === ACTION.ATTACK) {
       // Auto-record SET ATT for the back row setter on every attack
       const backRowSetter = s.lineup.find(
         (sl) => sl.positionLabel === 'S' && [1, 5, 6].includes(sl.position)
       );
-      if (backRowSetter) {
+      if (backRowSetter && backRowSetter.playerId !== contactData.player_id) {
         const isKill = contactData.result === RESULT.KILL;
         const autoSetContact = {
           match_id:     s.matchId,
@@ -433,10 +542,14 @@ export const useMatchStore = create((set, get) => ({
         newCommittedContacts = [...newCommittedContacts, { ...autoSetContact, id: autoSetId }];
       } else if (contactData.result === RESULT.KILL) {
         // No back row setter — fall back to back-assigning the last manual SET contact
-        const lastSetContact = s.committedContacts
-          .findLast((c) => c.set_id === s.currentSetId && c.action === ACTION.SET);
+        const cc = s.committedContacts;
+        let lastSetContact = null;
+        for (let i = cc.length - 1; i >= 0; i--) {
+          if (cc[i].set_id === s.currentSetId && cc[i].action === ACTION.SET) { lastSetContact = cc[i]; break; }
+        }
         if (lastSetContact) {
           assistId = lastSetContact.id;
+          prevAssistResult = lastSetContact.result;
           await db.contacts.update(lastSetContact.id, { result: RESULT.ASSIST });
           newCommittedContacts = newCommittedContacts.map((c) =>
             c.id === lastSetContact.id ? { ...c, result: RESULT.ASSIST } : c
@@ -447,7 +560,7 @@ export const useMatchStore = create((set, get) => ({
 
     const prevHistory = get().actionHistory;
     set({
-      actionHistory:     [{ type: 'contact', contactId: id, assistId, autoSetId }, ...prevHistory].slice(0, ACTION_HISTORY_LIMIT),
+      actionHistory:     [{ type: 'contact', contactId: id, assistId, prevAssistResult, autoSetId }, ...prevHistory].slice(0, ACTION_HISTORY_LIMIT),
       committedContacts: newCommittedContacts,
       ...(contactData.action === ACTION.SERVE || contactData.action === ACTION.PASS
         ? { rallyPhase: 'in_rally' } : {}),
@@ -457,6 +570,14 @@ export const useMatchStore = create((set, get) => ({
     if (slot) {
       const lastName = slot.playerName.split(' ').pop();
       setFeed(set, getStatLabel(contactData.action, contactData.result, lastName));
+    }
+
+    if (
+      contactData.action === ACTION.SERVE &&
+      (contactData.result === RESULT.IN || contactData.result === RESULT.ACE) &&
+      s.serveSide === SIDE.US
+    ) {
+      set({ pendingServeContact: { contactId: id, result: contactData.result } });
     }
 
     return id;
@@ -578,11 +699,12 @@ export const useMatchStore = create((set, get) => ({
     const s = get();
 
     // Snapshot state before the swap for undo
-    const prevLiberoOnCourt  = s.liberoOnCourt;
-    const prevLineup         = s.lineup;
-    const prevReplacedId     = s.liberoReplacedPlayerId;
-    const prevReplacedName   = s.liberoReplacedName;
-    const prevReplacedJersey = s.liberoReplacedJersey;
+    const prevLiberoOnCourt       = s.liberoOnCourt;
+    const prevLineup              = s.lineup;
+    const prevReplacedId          = s.liberoReplacedPlayerId;
+    const prevReplacedName        = s.liberoReplacedName;
+    const prevReplacedJersey      = s.liberoReplacedJersey;
+    const prevReplacedPositionLabel = s.liberoReplacedPositionLabel;
 
     if (s.liberoOnCourt) {
       // Swap libero out — restore the player they replaced
@@ -633,13 +755,14 @@ export const useMatchStore = create((set, get) => ({
     });
 
     pushAction(get, set, {
-      type:              'libero_swap',
-      subId:             subDbId,
-      prevLiberoOnCourt: prevLiberoOnCourt,
-      prevLineup:        prevLineup,
-      prevReplacedId:    prevReplacedId,
-      prevReplacedName:  prevReplacedName,
-      prevReplacedJersey: prevReplacedJersey,
+      type:                    'libero_swap',
+      subId:                   subDbId,
+      prevLiberoOnCourt:       prevLiberoOnCourt,
+      prevLineup:              prevLineup,
+      prevReplacedId:          prevReplacedId,
+      prevReplacedName:        prevReplacedName,
+      prevReplacedJersey:      prevReplacedJersey,
+      prevReplacedPositionLabel,
     });
   },
 
@@ -650,13 +773,18 @@ export const useMatchStore = create((set, get) => ({
       match_id:         s.matchId,
       set_id:           s.currentSetId,
       player_id:        null,
+      rally_number:     s.rallyCount,
       action,
       result,
       opponent_contact: true,
       timestamp:        Date.now(),
     };
     const id = await db.contacts.add(contactFull);
-    set({ committedContacts: [...get().committedContacts, { ...contactFull, id }] });
+    const prevHistory = get().actionHistory;
+    set({
+      committedContacts: [...get().committedContacts, { ...contactFull, id }],
+      actionHistory: [{ type: 'opp_contact', contactId: id }, ...prevHistory].slice(0, ACTION_HISTORY_LIMIT),
+    });
     setFeed(set, feedLabel);
     await get().addPoint(pointSide);
   },
@@ -679,29 +807,15 @@ export const useMatchStore = create((set, get) => ({
     await db.rallies.where('set_id').equals(s.currentSetId).delete();
     await db.substitutions.where('set_id').equals(s.currentSetId).delete();
     set({
-      ourScore:                    0,
-      oppScore:                    0,
-      serveSide:                   SIDE.US,
-      ourTimeouts:                 0,
-      oppTimeouts:                 0,
-      subsUsed:                    0,
-      subPairs:                    {},
-      exhaustedPlayerIds:          [],
-      rallyCount:                  0,
-      rotationNum:                 1,
-      committedContacts:           [],
-      actionHistory:               [],
-      pendingHblk:                 null,
-      lastFeedItem:                null,
-      rallyPhase:                  'pre_serve',
-      currentRun:                  { side: null, count: 0 },
-      pointHistory:                [],
-      pendingSetWin:               null,
-      liberoOnCourt:               false,
-      liberoReplacedPlayerId:      null,
-      liberoReplacedName:          '',
-      liberoReplacedJersey:        '',
-      liberoReplacedPositionLabel: '',
+      ...makeSetResetState(),
+      serveSide:              SIDE.US,
+      pendingSetWin:          null,
+      liberoOnCourt:          false,
+      liberoReplacedPlayerId: null,
+      liberoReplacedName:     '',
+      liberoReplacedJersey:   '',
+      serveReceiveFormations: null,
+      plannedSubs:            [],
     });
   },
 
@@ -727,27 +841,47 @@ export const useMatchStore = create((set, get) => ({
     });
 
     set({
-      currentSetId:                newSetId,
-      setNumber:                   nextSetNum,
-      ourScore:                    0,
-      oppScore:                    0,
-      ourSetsWon:                  newSetsUs,
-      oppSetsWon:                  newSetsThem,
-      ourTimeouts:                 0,
-      oppTimeouts:                 0,
-      subsUsed:                    0,
-      subPairs:                    {},
-      exhaustedPlayerIds:          [],
-      rallyCount:                  0,
-      rotationNum:                 1,
-      committedContacts:           [],
-      actionHistory:               [],
-      pendingHblk:                 null,
-      lastFeedItem:                null,
-      rallyPhase:                  'pre_serve',
-      currentRun:                  { side: null, count: 0 },
-      pointHistory:                [],
-      liberoReplacedPositionLabel: '',
+      ...makeSetResetState(),
+      currentSetId:  newSetId,
+      setNumber:     nextSetNum,
+      ourSetsWon:    newSetsUs,
+      oppSetsWon:    newSetsThem,
+    });
+  },
+
+  confirmServeZone: async (contactId, court_x, court_y, zone) => {
+    await db.contacts.update(contactId, { court_x, court_y, zone });
+    set(s => {
+      const contact = s.committedContacts.find(c => c.id === contactId);
+      return {
+        pendingServeContact: null,
+        serveReticles: [...s.serveReticles, { contactId, result: contact?.result, court_x, court_y, zone }],
+        committedContacts: s.committedContacts.map(c =>
+          c.id === contactId ? { ...c, court_x, court_y, zone } : c
+        ),
+      };
+    });
+  },
+
+  dismissServeZoneModal: () => set({ pendingServeContact: null }),
+
+  loadSetFormationData: (setRecord) => {
+    set({
+      serveReceiveFormations: setRecord?.serve_receive_formations ?? null,
+      plannedSubs:            setRecord?.planned_subs            ?? [],
+    });
+  },
+
+  loadServeReticles: async (setId) => {
+    const contacts = await db.contacts
+      .where('set_id').equals(setId)
+      .filter(c => c.action === 'serve' && c.court_x != null)
+      .toArray();
+    set({
+      serveReticles: contacts.map(c => ({
+        contactId: c.id, result: c.result,
+        court_x: c.court_x, court_y: c.court_y, zone: c.zone,
+      })),
     });
   },
 
@@ -810,6 +944,60 @@ export const useMatchStore = create((set, get) => ({
     });
 
     // Delete any orphan in-progress sets (created by old endSet() calls that were never played)
+    await db.sets
+      .where('match_id').equals(s.matchId)
+      .filter((row) => row.status === SET_STATUS.IN_PROGRESS)
+      .delete();
+
+    set({ ourSetsWon: newSetsUs, oppSetsWon: newSetsThem });
+  },
+
+  // ── Set Revision ──────────────────────────────────────────────────────────
+
+  // Clear all data for a set and put it back to IN_PROGRESS so it can be re-entered.
+  // Match status goes back to IN_PROGRESS until finishRevisedSet is called.
+  reviseSet: async (setId) => {
+    await db.contacts.where('set_id').equals(setId).delete();
+    await db.rallies.where('set_id').equals(setId).delete();
+    await db.substitutions.where('set_id').equals(setId).delete();
+    await db.lineups.where('set_id').equals(setId).delete();
+    const setRow = await db.sets.get(setId);
+    await db.sets.update(setId, {
+      status:           SET_STATUS.IN_PROGRESS,
+      our_score:        0,
+      opp_score:        0,
+      winner:           null,
+      libero_player_id: null,
+    });
+    if (setRow?.match_id) {
+      await db.matches.update(setRow.match_id, { status: MATCH_STATUS.IN_PROGRESS });
+    }
+  },
+
+  // Finalize a revised set — called by LiveMatchPage when the re-entered set ends.
+  // Recounts set wins from DB rather than incrementing to handle any result change.
+  finishRevisedSet: async (winner) => {
+    const s = get();
+    await db.sets.update(s.currentSetId, {
+      status:    SET_STATUS.COMPLETE,
+      our_score: s.ourScore,
+      opp_score: s.oppScore,
+      winner,
+    });
+
+    const allComplete = await db.sets
+      .where('match_id').equals(s.matchId)
+      .filter((row) => row.status === SET_STATUS.COMPLETE)
+      .toArray();
+    const newSetsUs   = allComplete.filter((row) => row.winner === SIDE.US).length;
+    const newSetsThem = allComplete.filter((row) => row.winner === SIDE.THEM).length;
+
+    await db.matches.update(s.matchId, {
+      status:       MATCH_STATUS.COMPLETE,
+      our_sets_won: newSetsUs,
+      opp_sets_won: newSetsThem,
+    });
+
     await db.sets
       .where('match_id').equals(s.matchId)
       .filter((row) => row.status === SET_STATUS.IN_PROGRESS)

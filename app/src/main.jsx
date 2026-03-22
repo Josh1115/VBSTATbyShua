@@ -3,9 +3,10 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.jsx';
 import { seedDevData, patchSeedPositions } from './db/seeds.js';
+import { STORAGE_KEYS, getBoolStorage, getStorageItem } from './utils/storage.js';
 
 // Apply persisted AMOLED mode before first render to avoid flash
-if (localStorage.getItem('vbstat_amoled') === '1') {
+if (getBoolStorage(STORAGE_KEYS.AMOLED)) {
   document.documentElement.classList.add('amoled');
 }
 
@@ -18,7 +19,7 @@ if (localStorage.getItem('vbstat_amoled') === '1') {
     red:    { hex: '#ef4444', rgb: '239 68 68'  },
     purple: { hex: '#a855f7', rgb: '168 85 247' },
   };
-  const saved = localStorage.getItem('vbstat_accent') ?? 'orange';
+  const saved = getStorageItem(STORAGE_KEYS.ACCENT, 'orange');
   const c = ACCENTS[saved] ?? ACCENTS.orange;
   document.documentElement.style.setProperty('--color-primary', c.hex);
   document.documentElement.style.setProperty('--color-primary-rgb', c.rgb);

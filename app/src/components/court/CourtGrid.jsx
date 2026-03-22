@@ -1,5 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMatchStore } from '../../store/matchStore';
+import { useShallow } from 'zustand/react/shallow';
 import { ACTION, RESULT } from '../../constants';
 import { PlayerTile } from './PlayerTile';
 
@@ -116,6 +117,7 @@ function getServeReceiveDisplayOrder(lineup) {
   if (sp === 1) return [lineup[3], lineup[2], lineup[0], lineup[4], lineup[5], lineup[1]];
   if (sp === 6) return [lineup[2], lineup[1], lineup[5], lineup[3], lineup[4], lineup[0]];
   if (sp === 5) return [lineup[4], lineup[2], lineup[1], lineup[3], lineup[5], lineup[0]];
+  if (sp === 3) return [lineup[1], lineup[2], lineup[4], lineup[3], lineup[5], lineup[0]];
   return GRID_ORDER.map(i => lineup[i]);
 }
 
@@ -288,36 +290,32 @@ function PerfectPassBadge({ x, y }) {
 }
 
 export const CourtGrid = memo(function CourtGrid() {
-  const lineup            = useMatchStore((s) => s.lineup);
-  const committedContacts = useMatchStore((s) => s.committedContacts);
-  const currentSetId      = useMatchStore((s) => s.currentSetId);
-  const rallyPhase        = useMatchStore((s) => s.rallyPhase);
-  const serveSide         = useMatchStore((s) => s.serveSide);
-  const rotationNum       = useMatchStore((s) => s.rotationNum);
-  const liberoId          = useMatchStore((s) => s.liberoId);
+  const {
+    lineup, committedContacts, currentSetId, rallyPhase, serveSide,
+    rotationNum, liberoId, serveReceiveFormations,
+  } = useMatchStore(useShallow((s) => ({
+    lineup:                 s.lineup,
+    committedContacts:      s.committedContacts,
+    currentSetId:           s.currentSetId,
+    rallyPhase:             s.rallyPhase,
+    serveSide:              s.serveSide,
+    rotationNum:            s.rotationNum,
+    liberoId:               s.liberoId,
+    serveReceiveFormations: s.serveReceiveFormations,
+  })));
 
   const inRally        = rallyPhase === 'in_rally';
   const inServeReceive = serveSide === 'them' && !inRally;
 
-  // #1 Ball arc
-  const [ballArc,           setBallArc]           = useState(null); // { key, x, y } | null
-  // #4 Kill burst (volleyball emojis)
-  const [killBurst,         setKillBurst]         = useState(null); // { key, x, y } | null
-  // Kill firework (colored dots from K button area) + rising KILL badge
-  const [killFirework,      setKillFirework]      = useState(null); // { key, x, y } | null
-  const [killBadge,         setKillBadge]         = useState(null); // { key, x, y } | null
-  // Ace celebration (ring + text)
-  const [aceCeleb,          setAceCeleb]          = useState(null); // { key, x, y } | null
-  // Block hands
-  const [blockHandsKey,     setBlockHandsKey]     = useState(0);
-  // Perfect pass badge
-  const [perfectPassBadge,  setPerfectPassBadge]  = useState(null); // { key, x, y } | null
-  // #2 Net flash
-  const [netFlash,          setNetFlash]          = useState(0);
-  // #7 Libero ghosts — grid indices where the outgoing player was the libero
-  const [liberoGhosts,  setLiberoGhosts]  = useState(new Set());
-  // #7 Rotation ghosts — pre-rotation cell snapshot for ghost fade-out during sweep
-  const [rotationGhosts, setRotationGhosts] = useState(null);
+  // Contact animations (kill/ace/pass/net/block overlays)
+  const [anim, setAnim] = useState({
+    ballArc: null, killBurst: null, killFirework: null, killBadge: null,
+    aceCeleb: null, perfectPassBadge: null, netFlash: 0, blockHandsKey: 0,
+  });
+  // Substitution overlay state
+  const [sub, setSub] = useState({ flashIds: new Set(), ghosts: {}, liberoGhosts: new Set() });
+  // Rotation overlay state
+  const [rot, setRot] = useState({ rotating: false, ghosts: null });
   // #12 Court draw-in — one-shot on mount
   const [showCourtDraw, setShowCourtDraw] = useState(true);
 
@@ -353,22 +351,16 @@ export const CourtGrid = memo(function CourtGrid() {
         const x   = r.left + r.width  * 0.5;
         const y   = r.top  + r.height * 0.5;
         const key = c.id ?? len;
-        setBallArc({ key, x, y });
         if (isKill) {
-          setKillBurst({ key, x, y });
-          // K button is ~60% down the tile; firework + badge originate from there
           const kBtnY = r.top + r.height * 0.60;
-          setKillFirework({ key, x, y: kBtnY });
-          setKillBadge({ key, x, y: kBtnY });
+          setAnim((s) => ({ ...s, ballArc: { key, x, y }, killBurst: { key, x, y }, killFirework: { key, x, y: kBtnY }, killBadge: { key, x, y: kBtnY } }));
           clearTimeout(arcTimerRef.current);
-          arcTimerRef.current = setTimeout(() => {
-            setBallArc(null); setKillBurst(null); setKillFirework(null); setKillBadge(null);
-          }, 920);
+          arcTimerRef.current = setTimeout(() => setAnim((s) => ({ ...s, ballArc: null, killBurst: null, killFirework: null, killBadge: null })), 920);
         }
         if (isAce) {
+          setAnim((s) => ({ ...s, ballArc: { key, x, y }, aceCeleb: { key, x, y } }));
           clearTimeout(aceTimerRef.current);
-          setAceCeleb({ key, x, y });
-          aceTimerRef.current = setTimeout(() => { setBallArc(null); setAceCeleb(null); }, 820);
+          aceTimerRef.current = setTimeout(() => setAnim((s) => ({ ...s, ballArc: null, aceCeleb: null })), 820);
         }
       }
     }
@@ -379,8 +371,8 @@ export const CourtGrid = memo(function CourtGrid() {
       if (el) {
         const r = el.getBoundingClientRect();
         clearTimeout(passTimerRef.current);
-        setPerfectPassBadge({ key: c.id ?? len, x: r.left + r.width * 0.5, y: r.top + r.height * 0.35 });
-        passTimerRef.current = setTimeout(() => setPerfectPassBadge(null), 920);
+        setAnim((s) => ({ ...s, perfectPassBadge: { key: c.id ?? len, x: r.left + r.width * 0.5, y: r.top + r.height * 0.35 } }));
+        passTimerRef.current = setTimeout(() => setAnim((s) => ({ ...s, perfectPassBadge: null })), 920);
       }
     }
 
@@ -388,40 +380,47 @@ export const CourtGrid = memo(function CourtGrid() {
     const isBlock    = c.action === ACTION.BLOCK && (c.result === RESULT.SOLO || c.result === RESULT.ASSIST);
     const isNetTouch = c.action === ACTION.ERROR && c.result === RESULT.NET_TOUCH;
     if (isBlock || isNetTouch) {
-      setNetFlash((k) => k + 1);
-      if (isBlock) setBlockHandsKey((k) => k + 1);
+      setAnim((s) => ({ ...s, netFlash: s.netFlash + 1, ...(isBlock && { blockHandsKey: s.blockHandsKey + 1 }) }));
     }
-  }, [committedContacts]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Refs (playerRefs, arcTimerRef, etc.) and stable setState setters are intentionally
+  // omitted from deps — refs are always fresh via .current, setState is stable by design.
+    return () => {
+      clearTimeout(arcTimerRef.current);
+      clearTimeout(aceTimerRef.current);
+      clearTimeout(passTimerRef.current);
+    };
+  }, [committedContacts]);
 
   // Rotation flash + #7 ghost — sweep clockwise, ghost previous jerseys fading out
-  const [rotating, setRotating] = useState(false);
   const prevRotNumRef = useRef(rotationNum);
   useEffect(() => {
     if (prevRotNumRef.current !== rotationNum) {
-      // Snapshot pre-rotation cells for ghost overlay (prevCellsRef still holds old cells here)
-      setRotationGhosts(prevCellsRef.current ? [...prevCellsRef.current] : null);
       prevRotNumRef.current = rotationNum;
-      setRotating(true);
-      const t = setTimeout(() => { setRotating(false); setRotationGhosts(null); }, 600);
+      setRot({ rotating: true, ghosts: prevCellsRef.current ? [...prevCellsRef.current] : null });
+      const t = setTimeout(() => setRot({ rotating: false, ghosts: null }), 600);
       return () => clearTimeout(t);
     }
-  }, [rotationNum]); // eslint-disable-line react-hooks/exhaustive-deps
+  // prevRotNumRef, prevCellsRef are refs; setRot is stable setState.
+  }, [rotationNum]);
 
   // Sub flash + sub ghost — detect which tile changed player without a rotation
-  const [subFlashIds, setSubFlashIds] = useState(new Set());
-  const [subGhosts,   setSubGhosts]   = useState({}); // { [gridIdx]: outgoingLastName }
   const prevCellsRef   = useRef(null);
   const prevRotForSub  = useRef(rotationNum);
   const subTimersRef   = useRef([]);
 
-  const cells = useMemo(() =>
-    inRally
-      ? getBaseDisplayOrder(lineup)
-      : inServeReceive
-        ? getServeReceiveDisplayOrder(lineup)
-        : GRID_ORDER.map((i) => lineup[i]),
-    [lineup, inRally, inServeReceive]
-  );
+  const cells = useMemo(() => {
+    if (inRally) return getBaseDisplayOrder(lineup);
+    if (inServeReceive) {
+      const custom = serveReceiveFormations?.[rotationNum];
+      if (custom) {
+        const byServeOrder = {};
+        lineup.forEach((sl) => { byServeOrder[sl.serveOrder - 1] = sl; });
+        return custom.map((soIdx) => byServeOrder[soIdx] ?? null);
+      }
+      return getServeReceiveDisplayOrder(lineup);
+    }
+    return GRID_ORDER.map((i) => lineup[i]);
+  }, [lineup, inRally, inServeReceive, serveReceiveFormations, rotationNum]);
 
   // Sub flash + ghost — runs after cells is computed
   useEffect(() => {
@@ -441,21 +440,20 @@ export const CourtGrid = memo(function CourtGrid() {
         }
       });
       if (newIds.size > 0) {
-        setSubFlashIds(newIds);
-        setSubGhosts(newGhosts);
-        if (newLiberoIdxs.size > 0) setLiberoGhosts(newLiberoIdxs);
+        setSub({ flashIds: newIds, ghosts: newGhosts, liberoGhosts: newLiberoIdxs });
         subTimersRef.current.forEach(clearTimeout);
         subTimersRef.current = [
-          setTimeout(() => setSubFlashIds(new Set()), 1100),
-          setTimeout(() => setSubGhosts({}), 750),
-          setTimeout(() => setLiberoGhosts(new Set()), 650),
+          setTimeout(() => setSub((s) => ({ ...s, flashIds: new Set() })), 1100),
+          setTimeout(() => setSub((s) => ({ ...s, ghosts: {} })), 750),
+          setTimeout(() => setSub((s) => ({ ...s, liberoGhosts: new Set() })), 650),
         ];
       }
     }
     prevCellsRef.current = cells;
     prevRotForSub.current = rotationNum;
     return () => subTimersRef.current.forEach(clearTimeout);
-  }, [cells, rotationNum, liberoId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // prevCellsRef, prevRotForSub, subTimersRef are refs; setState setters are stable.
+  }, [cells, rotationNum, liberoId]);
 
   // FLIP slide — animate tiles to new positions when display mode changes
   const playerRefs   = useRef({}); // { [playerId]: HTMLElement }
@@ -468,21 +466,45 @@ export const CourtGrid = memo(function CourtGrid() {
     prevModeRef.current = { inRally, inServeReceive };
 
     if (modeChanged) {
+      // FLIP: batch all reads before any writes to avoid per-element layout thrash.
+      // Pass 1 — read all new rects in one sweep (no layout forced here)
+      const newRects = {};
+      cells.forEach((slot) => {
+        if (!slot?.playerId) return;
+        const el = playerRefs.current[slot.playerId];
+        if (el) newRects[slot.playerId] = el.getBoundingClientRect();
+      });
+
+      // Pass 2 — write all transforms at once (reads already done)
+      let anyMoved = false;
       cells.forEach((slot) => {
         if (!slot?.playerId) return;
         const el       = playerRefs.current[slot.playerId];
         const prevRect = prevRectsRef.current[slot.playerId];
-        if (!el || !prevRect) return;
-        const newRect = el.getBoundingClientRect();
+        const newRect  = newRects[slot.playerId];
+        if (!el || !prevRect || !newRect) return;
         const dx = prevRect.left - newRect.left;
         const dy = prevRect.top  - newRect.top;
         if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
           el.style.transition = 'none';
           el.style.transform  = `translate(${dx}px,${dy}px)`;
-          void el.offsetWidth;
-          el.style.transition = 'transform 220ms ease-out';
-          el.style.transform  = '';
+          anyMoved = true;
         }
+      });
+
+      // Single reflow to flush all transform writes at once (instead of one per tile)
+      if (anyMoved) {
+        const firstId = cells.find((s) => s?.playerId)?.playerId;
+        void playerRefs.current[firstId]?.offsetWidth;
+      }
+
+      // Pass 3 — release all transforms to animate
+      cells.forEach((slot) => {
+        if (!slot?.playerId) return;
+        const el = playerRefs.current[slot.playerId];
+        if (!el) return;
+        el.style.transition = 'transform 220ms ease-out';
+        el.style.transform  = '';
       });
     }
 
@@ -492,9 +514,9 @@ export const CourtGrid = memo(function CourtGrid() {
       const el = playerRefs.current[slot.playerId];
       if (el) prevRectsRef.current[slot.playerId] = el.getBoundingClientRect();
     });
-  // playerRefs and prevRectsRef are mutable refs — safe to read in layout effect
-  // without listing as deps; [cells] is the only trigger we need
-  }, [cells]); // eslint-disable-line react-hooks/exhaustive-deps
+  // playerRefs, prevRectsRef, prevModeRef are mutable refs — safe to read in layout effect
+  // without listing as deps; inRally/inServeReceive changes always produce a new cells array.
+  }, [cells, inRally, inServeReceive]);
 
   // Single O(n) pass for all 6 players — avoids 6 separate contact scans per render
   const heatMap = useMemo(() => {
@@ -512,15 +534,15 @@ export const CourtGrid = memo(function CourtGrid() {
           const heat       = slot?.playerId
             ? (heatMap[slot.playerId] ?? { attack: null, serve: null, pass: null, dig: null })
             : { attack: null, serve: null, pass: null, dig: null };
-          const isSubFlash = subFlashIds.has(slot?.playerId);
+          const isSubFlash = sub.flashIds.has(slot?.playerId);
           // #3 directional nudge replaces border-only tile-rotating
-          const cellClass  = rotating
+          const cellClass  = rot.rotating
             ? `relative tile-rotate-${ROTATION_NUDGE[gridIdx]}`
             : isSubFlash ? 'relative tile-sub-flash' : 'relative';
-          const cellStyle  = rotating ? { animationDelay: `${ROTATION_DELAYS[gridIdx]}ms` } : undefined;
+          const cellStyle  = rot.rotating ? { animationDelay: `${ROTATION_DELAYS[gridIdx]}ms` } : undefined;
           return (
             <div
-              key={slot?.position ?? gridIdx}
+              key={slot?.playerId ?? `empty-${gridIdx}`}
               className={`${cellClass} overflow-hidden`}
               style={cellStyle}
               ref={(el) => { if (el && slot?.playerId) playerRefs.current[slot.playerId] = el; }}
@@ -530,29 +552,29 @@ export const CourtGrid = memo(function CourtGrid() {
                 position={position}
                 isServer={isServer}
                 heat={heat}
-                isSubIn={subFlashIds.has(slot?.playerId)}
+                isSubIn={sub.flashIds.has(slot?.playerId)}
                 isDimmed={inServeReceive && gridIdx < 3}
               />
               {/* Sub swap slide — outgoing name falls down-and-blurs (#9) */}
-              {subGhosts[gridIdx] && (
-                <div className={`absolute top-0 inset-x-0 h-[42%] pointer-events-none flex items-center justify-center ${liberoGhosts.has(gridIdx) ? 'libero-ghost-exit' : 'sub-ghost-exit'}`}>
+              {sub.ghosts[gridIdx] && (
+                <div className={`absolute top-0 inset-x-0 h-[42%] pointer-events-none flex items-center justify-center ${sub.liberoGhosts.has(gridIdx) ? 'libero-ghost-exit' : 'sub-ghost-exit'}`}>
                   <span
-                    className={`font-bold uppercase tracking-wider ${liberoGhosts.has(gridIdx) ? 'text-emerald-400/70' : 'text-white/55'}`}
+                    className={`font-bold uppercase tracking-wider ${sub.liberoGhosts.has(gridIdx) ? 'text-emerald-400/70' : 'text-white/55'}`}
                     style={{ fontSize: '3.15vmin', letterSpacing: '0.18em' }}
                   >
-                    {subGhosts[gridIdx]}
+                    {sub.ghosts[gridIdx]}
                   </span>
                 </div>
               )}
               {/* Libero swap trail — emerald shimmer sweep (#8) */}
-              {liberoGhosts.has(gridIdx) && (
+              {sub.liberoGhosts.has(gridIdx) && (
                 <div className="libero-swap-trail absolute inset-0 pointer-events-none z-[15]" />
               )}
               {/* Rotation ghost — previous jersey expands/blurs out during sweep (#7) */}
-              {rotationGhosts?.[gridIdx]?.jersey !== undefined && rotating && (
+              {rot.ghosts?.[gridIdx]?.jersey !== undefined && rot.rotating && (
                 <div className="rotation-ghost-exit absolute inset-0 pointer-events-none z-[12] flex items-center justify-center">
                   <span className="font-black text-white/20" style={{ fontSize: '7vmin' }}>
-                    {rotationGhosts[gridIdx].jersey}
+                    {rot.ghosts[gridIdx].jersey}
                   </span>
                 </div>
               )}
@@ -561,9 +583,9 @@ export const CourtGrid = memo(function CourtGrid() {
         })}
 
         {/* #2 Net flash line — sits at the boundary between front and back rows */}
-        {netFlash > 0 && (
+        {anim.netFlash > 0 && (
           <div
-            key={netFlash}
+            key={anim.netFlash}
             className="net-flash-line absolute left-0 right-0 pointer-events-none z-20"
             style={{
               top: 'calc(50% - 2px)',
@@ -575,7 +597,7 @@ export const CourtGrid = memo(function CourtGrid() {
         )}
 
         {/* Block hands — rise above the net on a block */}
-        {blockHandsKey > 0 && <BlockHands blockKey={blockHandsKey} />}
+        {anim.blockHandsKey > 0 && <BlockHands blockKey={anim.blockHandsKey} />}
 
         {/* #12 Court lines draw-in — one-shot SVG on mount */}
         {showCourtDraw && (
@@ -607,37 +629,33 @@ export const CourtGrid = memo(function CourtGrid() {
       </div>
 
       {/* #1 Ball arc — fixed overlay, outside grid so it flies across the full viewport */}
-      {ballArc && (
-        <BallArc
-          key={ballArc.key}
-          startX={ballArc.x}
-          startY={ballArc.y}
-        />
+      {anim.ballArc && (
+        <BallArc key={anim.ballArc.key} startX={anim.ballArc.x} startY={anim.ballArc.y} />
       )}
 
       {/* #4 Kill burst — volleyball emojis scatter */}
-      {killBurst && (
-        <KillBurst key={killBurst.key} x={killBurst.x} y={killBurst.y} />
+      {anim.killBurst && (
+        <KillBurst key={anim.killBurst.key} x={anim.killBurst.x} y={anim.killBurst.y} />
       )}
 
       {/* Kill firework — colored dots from K button area */}
-      {killFirework && (
-        <KillFirework key={killFirework.key} x={killFirework.x} y={killFirework.y} />
+      {anim.killFirework && (
+        <KillFirework key={anim.killFirework.key} x={anim.killFirework.x} y={anim.killFirework.y} />
       )}
 
       {/* Kill badge — "KILL" rises from K button like DIME */}
-      {killBadge && (
-        <KillBadge key={killBadge.key} x={killBadge.x} y={killBadge.y} />
+      {anim.killBadge && (
+        <KillBadge key={anim.killBadge.key} x={anim.killBadge.x} y={anim.killBadge.y} />
       )}
 
       {/* Ace celebration — gold ring + ACE text */}
-      {aceCeleb && (
-        <AceCelebration key={aceCeleb.key} x={aceCeleb.x} y={aceCeleb.y} />
+      {anim.aceCeleb && (
+        <AceCelebration key={anim.aceCeleb.key} x={anim.aceCeleb.x} y={anim.aceCeleb.y} />
       )}
 
       {/* Perfect pass badge — "3!" pops above tile */}
-      {perfectPassBadge && (
-        <PerfectPassBadge key={perfectPassBadge.key} x={perfectPassBadge.x} y={perfectPassBadge.y} />
+      {anim.perfectPassBadge && (
+        <PerfectPassBadge key={anim.perfectPassBadge.key} x={anim.perfectPassBadge.x} y={anim.perfectPassBadge.y} />
       )}
     </>
   );

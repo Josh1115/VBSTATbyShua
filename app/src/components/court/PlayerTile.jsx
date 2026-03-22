@@ -1,14 +1,18 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useMatchStore } from '../../store/matchStore';
+import { useUiStore } from '../../store/uiStore';
+import { useShallow } from 'zustand/react/shallow';
 import { ACTION, RESULT, SERVE_TYPE, SIDE } from '../../constants';
+import { getStorageItem, STORAGE_KEYS } from '../../utils/storage';
 import { fmtPlayerName } from '../../stats/formatters';
+import { computePlayerStats } from '../../stats/engine';
 
-// Restart a CSS animation on a DOM element without re-rendering
+// Restart a CSS animation on a DOM element without re-rendering.
+// RAF avoids forced synchronous reflow (void el.offsetWidth pattern).
 function flashEl(el, cls = 'btn-flash') {
   if (!el) return;
   el.classList.remove(cls);
-  void el.offsetWidth;
-  el.classList.add(cls);
+  requestAnimationFrame(() => el.classList.add(cls));
 }
 
 // Generic full-fill tap button
@@ -43,28 +47,6 @@ const ServeBtn = memo(function ServeBtn({ typeLabel, outcomeLabel, onTap, cls })
   );
 });
 
-function computePlayerStats(contacts, playerId, setId) {
-  let k = 0, ace = 0, se = 0, dig = 0, blk = 0, ae = 0, pasSum = 0, pasN = 0;
-  for (const c of contacts) {
-    if (c.player_id !== playerId || c.set_id !== setId || c.opponent_contact) continue;
-    const { action, result } = c;
-    if (action === 'attack') {
-      if (result === 'kill')  k++;
-      if (result === 'error') ae++;
-    } else if (action === 'serve') {
-      if (result === 'ace')   ace++;
-      if (result === 'error') se++;
-    } else if (action === 'dig'   && (result === 'success' || result === 'freeball')) dig++;
-    else if (action === 'block'   && (result === 'solo' || result === 'assist')) blk++;
-    else if (action === 'pass') {
-      const v = Number(result);
-      if (!isNaN(v)) { pasSum += v; pasN++; }
-    }
-  }
-  const apr = pasN > 0 ? (pasSum / pasN).toFixed(1) : null;
-  return { k, ace, se, dig, blk, ae, apr, pasN };
-}
-
 const JERSEY_HEX = {
   'black': '#111827',
   'white': '#f8fafc',
@@ -72,22 +54,29 @@ const JERSEY_HEX = {
   'gray':  '#94a3b8',
 };
 
-const getNameFormat = () => localStorage.getItem('vbstat_player_name_format') ?? 'initial_last';
-
 export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, heat, isSubIn = false, isDimmed = false }) {
-  const recordContact     = useMatchStore((s) => s.recordContact);
-  const addPoint          = useMatchStore((s) => s.addPoint);
-  const tapHblk           = useMatchStore((s) => s.tapHblk);
-  const pendingHblk       = useMatchStore((s) => s.pendingHblk);
-  const serveSide         = useMatchStore((s) => s.serveSide);
-  const committedContacts = useMatchStore((s) => s.committedContacts);
-  const currentSetId      = useMatchStore((s) => s.currentSetId);
-  const liberoId            = useMatchStore((s) => s.liberoId);
-  const playerNicknames     = useMatchStore((s) => s.playerNicknames);
-  const teamJerseyColor     = useMatchStore((s) => s.teamJerseyColor);
-  const liberoJerseyColor   = useMatchStore((s) => s.liberoJerseyColor);
-  const rallyCount          = useMatchStore((s) => s.rallyCount);
-  const rotationNum         = useMatchStore((s) => s.rotationNum);
+  const {
+    recordContact, addPoint, tapHblk,
+    pendingHblk, serveSide, committedContacts, currentSetId,
+    liberoId, playerNicknames, teamJerseyColor, liberoJerseyColor,
+    rallyCount, rotationNum,
+  } = useMatchStore(useShallow((s) => ({
+    recordContact:     s.recordContact,
+    addPoint:          s.addPoint,
+    tapHblk:           s.tapHblk,
+    pendingHblk:       s.pendingHblk,
+    serveSide:         s.serveSide,
+    committedContacts: s.committedContacts,
+    currentSetId:      s.currentSetId,
+    liberoId:          s.liberoId,
+    playerNicknames:   s.playerNicknames,
+    teamJerseyColor:   s.teamJerseyColor,
+    liberoJerseyColor: s.liberoJerseyColor,
+    rallyCount:        s.rallyCount,
+    rotationNum:       s.rotationNum,
+  })));
+
+  const showToast    = useUiStore((s) => s.showToast);
 
   const isLibero     = slot?.playerId && slot.playerId === liberoId;
   const jerseyColor  = isLibero ? liberoJerseyColor : teamJerseyColor;
@@ -101,6 +90,8 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const [rippleKey,     setRippleKey]     = useState(0);
   const [rippleColor,   setRippleColor]   = useState(null);
   const passRingTimer = useRef(null);
+
+  useEffect(() => () => clearTimeout(passRingTimer.current), []);
 
   useEffect(() => {
     setServeRecorded(false);
@@ -117,7 +108,8 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
 
   const tap = (action, result, extra = {}) => {
     flashJersey();
-    return recordContact({ player_id: slot.playerId, action, result, ...extra });
+    recordContact({ player_id: slot.playerId, action, result, ...extra })
+      .catch(() => showToast('Recording error — try again', 'error'));
   };
 
   const tapAndScore = async (action, result, extra = {}) => {
@@ -125,15 +117,29 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
     if (action === ACTION.ATTACK && result === RESULT.KILL)  vibrate(30);
     else if (action === ACTION.SERVE  && result === RESULT.ACE)  vibrate([18, 25, 45]);
     else if (action === ACTION.BLOCK  && result === RESULT.SOLO) vibrate(45);
-    const id = await recordContact({ player_id: slot.playerId, action, result, ...extra });
-    await addPoint(SIDE.US);
-    return id;
+    try {
+      // Run contact recording and score update in parallel so the score is
+      // visible immediately (addPoint is optimistic — updates UI before DB write).
+      const [id] = await Promise.all([
+        recordContact({ player_id: slot.playerId, action, result, ...extra }),
+        addPoint(SIDE.US),
+      ]);
+      return id;
+    } catch {
+      showToast('Recording error — try again', 'error');
+    }
   };
 
   const tapAndScoreThem = async (action, result, extra = {}) => {
     flashJersey();
-    await recordContact({ player_id: slot.playerId, action, result, ...extra });
-    await addPoint(SIDE.THEM);
+    try {
+      await Promise.all([
+        recordContact({ player_id: slot.playerId, action, result, ...extra }),
+        addPoint(SIDE.THEM),
+      ]);
+    } catch {
+      showToast('Recording error — try again', 'error');
+    }
   };
 
   const RIPPLE_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e'];
@@ -179,10 +185,25 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   };
   const posBorderColor = POS_BORDER[slot?.positionLabel] ?? null;
 
-  const tileStats = useMemo(
-    () => computePlayerStats(committedContacts, slot.playerId, currentSetId),
-    [committedContacts, slot.playerId, currentSetId]
+  const nameFormat = useMemo(
+    () => getStorageItem(STORAGE_KEYS.PLAYER_NAME_FORMAT, 'initial_last'),
+    []
   );
+
+  const tileStats = useMemo(() => {
+    const filtered = committedContacts.filter(
+      (c) => c.player_id === slot.playerId && c.set_id === currentSetId
+    );
+    const stats = computePlayerStats(filtered, 1);
+    const s = stats[slot.playerId];
+    if (!s) return { k: 0, ace: 0, se: 0, dig: 0, blk: 0, ae: 0, apr: null };
+    return {
+      k: s.k, ace: s.ace, se: s.se, dig: s.dig,
+      blk: s.bs + s.ba,
+      ae: s.ae,
+      apr: s.apr != null ? s.apr.toFixed(1) : null,
+    };
+  }, [committedContacts, slot.playerId, currentSetId]);
 
   const passRingClass = passRing === 0 ? 'pass-ring-0'
     : passRing === 1 ? 'pass-ring-1'
@@ -260,7 +281,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
 
         {/* ── Center: player name ── */}
         <span className={`font-semibold uppercase whitespace-nowrap leading-none text-slate-200${isSubIn ? ' sub-name-enter' : ''}`}>
-          <span style={{ fontSize: '3.15vmin', letterSpacing: '0.06em', fontFamily: 'ui-rounded, system-ui, sans-serif' }}>{fmtPlayerName(slot.playerName, playerNicknames[slot.playerId] ?? '', getNameFormat())}</span>
+          <span style={{ fontSize: '3.15vmin', letterSpacing: '0.06em', fontFamily: 'ui-rounded, system-ui, sans-serif' }}>{fmtPlayerName(slot.playerName, playerNicknames[slot.playerId] ?? '', nameFormat)}</span>
         </span>
         <div className="absolute right-2 flex items-center gap-1">
           {slot.positionLabel && (

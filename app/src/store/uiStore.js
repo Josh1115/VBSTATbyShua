@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 
+let toastTimerId = null;
+
 export const useUiStore = create((set) => ({
   toast: null,
 
   showToast: (message, variant = 'info') => {
+    clearTimeout(toastTimerId);
     set({ toast: { message, variant } });
-    setTimeout(() => set({ toast: null }), 3000);
+    toastTimerId = setTimeout(() => set({ toast: null }), 3000);
   },
 }));
 

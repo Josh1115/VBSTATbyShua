@@ -1,17 +1,20 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import Papa from 'papaparse';
-import { fmtHitting, fmtPassRating, fmtPct, fmtCount } from './formatters';
+import { fmtHitting, fmtPassRating, fmtPct, fmtCount, fmtRate, fmtDate } from './formatters';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 function playerRows(playerStats, playerNames) {
@@ -31,16 +34,17 @@ export function exportMatchCSV(playerStats, playerNames, filename = 'match-stats
     APR: fmtPassRating(s.apr),  '3OPT%': fmtPct(s.pp_pct),
     // Attacking
     TA: s.ta,  K: s.k,  AE: s.ae,
-    'HIT%': fmtHitting(s.hit_pct),  'K%': fmtPct(s.k_pct),  KPS: fmtCount(s.kps),
+    'HIT%': fmtHitting(s.hit_pct),  'K%': fmtPct(s.k_pct),  KPS: fmtRate(s.kps),
     // Setting
-    AST: s.ast,  BHE: s.bhe,  APS: fmtCount(s.aps),
+    AST: s.ast,  BHE: s.bhe,  APS: fmtRate(s.aps),
     // Blocking
-    BS: s.bs,  BA: s.ba,  BE: s.be,  BPS: fmtCount(s.bps),
+    BS: s.bs,  BA: s.ba,  BE: s.be,  BPS: fmtRate(s.bps),
     // Defense
-    DIG: s.dig,  DE: s.de,  DiPS: fmtCount(s.dips),
+    DIG: s.dig,  DE: s.de,  DiPS: fmtRate(s.dips),
   }));
 
-  const csv = Papa.unparse(rows);
+  // Prepend UTF-8 BOM so Excel opens non-ASCII names correctly
+  const csv = '\uFEFF' + Papa.unparse(rows);
   triggerDownload(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), filename);
 }
 
@@ -67,6 +71,7 @@ export function exportMaxPrepsCSV(playerStats, playerNames, playerJerseys, setsP
     'BS':  n(s.bs),
     'BA':  n(s.ba),
     'BE':  n(s.be),
+    // BHA (Ball Handling Assists) = setting assists + ball handling errors per MaxPreps template
     'BHA': n(s.ast) + n(s.bhe),
     'AST': n(s.ast),
     'BHE': n(s.bhe),
@@ -88,7 +93,7 @@ const MUTED = [148, 163, 184];   // slate-400
 
 function addPageHeader(doc, title, subtitle) {
   doc.setFillColor(...DARK);
-  doc.rect(0, 0, 216, 30, 'F');
+  doc.rect(0, 0, doc.internal.pageSize.getWidth(), 30, 'F');
   doc.setTextColor(...PRIMARY);
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
@@ -100,11 +105,11 @@ function addPageHeader(doc, title, subtitle) {
 }
 
 export function exportMatchPDF(matchMeta, playerStats, teamStats, rotationStats, playerNames, filename = 'match-stats.pdf') {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+  // Use A4 for non-US locales, letter for US
+  const pdfFormat = (navigator.language ?? '').startsWith('en-US') ? 'letter' : 'a4';
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: pdfFormat });
   const title = `vs. ${matchMeta.opponent_name ?? 'Opponent'}`;
-  const subtitle = matchMeta.date
-    ? new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date(matchMeta.date))
-    : '';
+  const subtitle = fmtDate(matchMeta.date);
 
   // ── Page 1: Match header + team totals ──────────────────────────────────────
   addPageHeader(doc, title, subtitle);
@@ -155,7 +160,7 @@ export function exportMatchPDF(matchMeta, playerStats, teamStats, rotationStats,
 
   autoTable(doc, {
     startY: 35,
-    head: [['Player', 'SA', 'ACE', 'ACE%', 'PA', 'APR', 'TA', 'K', 'HIT%', 'BS', 'BA', 'DIG']],
+    head: [['Player', 'SA', 'ACE', 'ACE%', 'REC', 'APR', 'TA', 'K', 'HIT%', 'BS', 'BA', 'DIG']],
     body: rows.map(r => [
       r.name,
       fmtCount(r.sa),

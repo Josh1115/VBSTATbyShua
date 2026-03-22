@@ -14,6 +14,9 @@ export const fmtPct = (val) => fmt(val, v => (v * 100).toFixed(1) + '%');
 // Integer counts  (kills, aces, digs, etc.)
 export const fmtCount = (val) => fmt(val, v => String(Math.round(v)));
 
+// Fractional per-set rates  (KPS, BPS, DiPS, APS, etc.)
+export const fmtRate = (val) => fmt(val, v => v.toFixed(2));
+
 // +3.24 / -1.45  (Volleyball Efficiency Rating)
 export const fmtVER = (val) => fmt(val, v => (v >= 0 ? '+' : '') + v.toFixed(2));
 

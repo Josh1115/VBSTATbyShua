@@ -1,7 +1,8 @@
 import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import { useMatchStore } from '../../store/matchStore';
+import { getBoolStorage, STORAGE_KEYS } from '../../utils/storage';
 import { useMatchStats } from '../../hooks/useMatchStats';
-import { SIDE, FORMAT } from '../../constants';
+import { SIDE, FORMAT, NFHS } from '../../constants';
 import { LiberoBox } from './LiberoBox';
 
 const HOLD_MS = 3000;
@@ -227,7 +228,7 @@ const NudgeBtn = memo(function NudgeBtn({ label, onTap }) {
 });
 
 export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, opponentName, onTimeoutCalled, onAssignLibero }) {
-  const flipped = localStorage.getItem('vbstat_flip_layout') === '1';
+  const flipped = getBoolStorage(STORAGE_KEYS.FLIP_LAYOUT);
   const ourScore      = useMatchStore((s) => s.ourScore);
   const oppScore      = useMatchStore((s) => s.oppScore);
   const ourSetsWon    = useMatchStore((s) => s.ourSetsWon);
@@ -244,6 +245,7 @@ export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, o
   const lastFeedItem  = useMatchStore((s) => s.lastFeedItem);
   const pointHistory  = useMatchStore((s) => s.pointHistory);
   const format        = useMatchStore((s) => s.format);
+  const lastSetScore  = useMatchStore((s) => s.lastSetScore);
 
   const { teamStats, oppStats } = useMatchStats();
 
@@ -325,7 +327,9 @@ export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, o
 
   // Set point / match point detection
   const setsNeeded   = format === FORMAT.BEST_OF_3 ? 2 : 3;
-  const spStart      = setNumber === 5 ? 14 : 24;
+  const decidingSet  = format === FORMAT.BEST_OF_3 ? 3 : 5;
+  const setTarget    = setNumber === decidingSet ? (lastSetScore ?? 15) : NFHS.SET_WIN_SCORE;
+  const spStart      = setTarget - 1;
   const ourSetPt     = ourScore >= spStart && ourScore > oppScore;
   const theirSetPt   = oppScore >= spStart && oppScore > ourScore;
   const ourMatchPt   = ourSetPt   && ourSetsWon  === setsNeeded - 1;
