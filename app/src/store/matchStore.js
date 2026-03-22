@@ -791,7 +791,8 @@ export const useMatchStore = create((set, get) => ({
       setFeed(set, feedLabel);
       await get().addPoint(pointSide);
     } catch (err) {
-      useUiStore.getState().showToast('Recording error — try again', 'error');
+      console.error('addOppPoint', err);
+      useUiStore.getState().showToast(`Recording error: ${err?.message ?? err}`, 'error');
     }
   },
 

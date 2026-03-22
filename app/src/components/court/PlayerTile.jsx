@@ -109,7 +109,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const tap = (action, result, extra = {}) => {
     flashJersey();
     recordContact({ player_id: slot.playerId, action, result, ...extra })
-      .catch(() => showToast('Recording error — try again', 'error'));
+      .catch((err) => { console.error('tap recordContact', err); showToast(`Recording error: ${err?.message ?? err}`, 'error'); });
   };
 
   const tapAndScore = async (action, result, extra = {}) => {
@@ -125,8 +125,9 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
         addPoint(SIDE.US),
       ]);
       return id;
-    } catch {
-      showToast('Recording error — try again', 'error');
+    } catch (err) {
+      console.error('tapAndScore', err);
+      showToast(`Recording error: ${err?.message ?? err}`, 'error');
     }
   };
 
@@ -137,8 +138,9 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
         recordContact({ player_id: slot.playerId, action, result, ...extra }),
         addPoint(SIDE.THEM),
       ]);
-    } catch {
-      showToast('Recording error — try again', 'error');
+    } catch (err) {
+      console.error('tapAndScoreThem', err);
+      showToast(`Recording error: ${err?.message ?? err}`, 'error');
     }
   };
 
