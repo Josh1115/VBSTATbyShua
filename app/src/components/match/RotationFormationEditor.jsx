@@ -21,8 +21,9 @@ function defaultFormation(rotNum) {
 }
 
 /**
- * RotationFormationEditor — drag-and-drop 2×3 court grid for one rotation's
- * serve-receive formation.
+ * RotationFormationEditor — tap-to-select 2×3 court grid for one rotation's
+ * serve-receive formation. Tap a cell to select it, then tap any other cell
+ * to swap their positions. Tap the same cell again to deselect.
  *
  * Props:
  *   rotationNum    — 1-6
@@ -34,23 +35,32 @@ function defaultFormation(rotNum) {
 export function RotationFormationEditor({ rotationNum, serveOrderIds, players, formation, onChange }) {
   // Local grid state: array of 6 serve_order indices (0-5) for cells [TL,TM,TR,BL,BM,BR]
   const [grid, setGrid] = useState(() => formation ?? defaultFormation(rotationNum));
-  const [draggingCell, setDraggingCell] = useState(null);
-  const [dragOverCell, setDragOverCell] = useState(null);
+  const [selectedCell, setSelectedCell] = useState(null);
 
   // Re-sync when formation prop changes (e.g., parent resets)
-  // Use a key on the parent instead if needed; this handles explicit prop updates.
   const handleReset = () => {
     const def = defaultFormation(rotationNum);
     setGrid(def);
+    setSelectedCell(null);
     onChange(rotationNum, null);
   };
 
   const swapCells = (from, to) => {
-    if (from === to) return;
     const next = [...grid];
     [next[from], next[to]] = [next[to], next[from]];
     setGrid(next);
     onChange(rotationNum, next);
+  };
+
+  const handleTap = (cellIdx) => {
+    if (selectedCell === null) {
+      setSelectedCell(cellIdx);
+    } else if (selectedCell === cellIdx) {
+      setSelectedCell(null);
+    } else {
+      swapCells(selectedCell, cellIdx);
+      setSelectedCell(null);
+    }
   };
 
   const getPlayer = (soIdx) => {
@@ -58,40 +68,34 @@ export function RotationFormationEditor({ rotationNum, serveOrderIds, players, f
     return pid ? (players ?? []).find((p) => String(p.id) === String(pid)) : null;
   };
 
+  const hasSelection = selectedCell !== null;
+
   return (
     <div className="space-y-2">
       {/* 2×3 court grid */}
-      <div
-        className="grid grid-cols-3 gap-1.5 select-none"
-        onPointerLeave={() => { setDraggingCell(null); setDragOverCell(null); }}
-        onPointerUp={() => {
-          if (draggingCell !== null && dragOverCell !== null) swapCells(draggingCell, dragOverCell);
-          setDraggingCell(null);
-          setDragOverCell(null);
-        }}
-      >
+      <div className="grid grid-cols-3 gap-1.5 select-none">
         {grid.map((soIdx, cellIdx) => {
-          const player   = getPlayer(soIdx);
-          const isDragging = draggingCell === cellIdx;
-          const isOver     = dragOverCell === cellIdx && draggingCell !== cellIdx;
-          // Front row = cells 0-2, back row = cells 3-5
-          const isBack = cellIdx >= 3;
+          const player     = getPlayer(soIdx);
+          const isSelected = selectedCell === cellIdx;
+          const isTarget   = hasSelection && !isSelected;
+
           return (
-            <div
+            <button
               key={cellIdx}
-              className={`relative rounded-lg border px-2 py-2 text-center cursor-grab touch-none transition-colors
-                ${isDragging
-                  ? 'opacity-50 border-primary bg-primary/10'
-                  : isOver
-                    ? 'border-primary bg-slate-700 ring-1 ring-primary/60'
-                    : isBack
-                      ? 'border-slate-600 bg-slate-800/60'
-                      : 'border-slate-600 bg-slate-700/60'
+              type="button"
+              onPointerDown={(e) => { e.preventDefault(); handleTap(cellIdx); }}
+              className={`relative rounded-lg border px-2 py-2 text-center transition-colors
+                ${isSelected
+                  ? 'border-primary bg-primary/20 ring-1 ring-primary/60'
+                  : isTarget
+                    ? 'border-slate-500 bg-slate-700/80'
+                    : 'border-slate-600 bg-slate-800/60'
                 }`}
-              onPointerDown={(e) => { e.preventDefault(); setDraggingCell(cellIdx); setDragOverCell(cellIdx); }}
-              onPointerEnter={() => { if (draggingCell !== null) setDragOverCell(cellIdx); }}
             >
               <span className="absolute top-0.5 left-1 text-[9px] text-slate-500">{CELL_LABELS[cellIdx]}</span>
+              {isSelected && (
+                <span className="absolute top-0.5 right-1 text-[9px] text-primary font-bold">✓</span>
+              )}
               {player ? (
                 <>
                   <span className="block text-xs font-bold text-white leading-tight">
@@ -105,7 +109,7 @@ export function RotationFormationEditor({ rotationNum, serveOrderIds, players, f
               ) : (
                 <span className="text-xs text-slate-600">—</span>
               )}
-            </div>
+            </button>
           );
         })}
       </div>
@@ -117,12 +121,19 @@ export function RotationFormationEditor({ rotationNum, serveOrderIds, players, f
         <div className="flex-1 h-px bg-slate-600" />
       </div>
 
-      <button
-        onClick={handleReset}
-        className="text-xs text-slate-500 hover:text-slate-300 underline"
-      >
-        Reset to default
-      </button>
+      <div className="flex items-center justify-between">
+        {hasSelection ? (
+          <span className="text-[10px] text-primary">Tap another cell to swap, or tap again to deselect</span>
+        ) : (
+          <span className="text-[10px] text-slate-500">Tap any cell to move a player</span>
+        )}
+        <button
+          onClick={handleReset}
+          className="text-xs text-slate-500 hover:text-slate-300 underline"
+        >
+          Reset
+        </button>
+      </div>
     </div>
   );
 }
