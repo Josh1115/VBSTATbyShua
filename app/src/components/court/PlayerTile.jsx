@@ -117,30 +117,26 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
     if (action === ACTION.ATTACK && result === RESULT.KILL)  vibrate(30);
     else if (action === ACTION.SERVE  && result === RESULT.ACE)  vibrate([18, 25, 45]);
     else if (action === ACTION.BLOCK  && result === RESULT.SOLO) vibrate(45);
+    // Score update is completely independent of contact recording.
+    // addPoint commits ourScore as its very first action, so the scoreboard
+    // updates immediately regardless of what happens with the DB write.
+    addPoint(SIDE.US);
     try {
-      // Run contact recording and score update in parallel so the score is
-      // visible immediately (addPoint is optimistic — updates UI before DB write).
-      const [id] = await Promise.all([
-        recordContact({ player_id: slot.playerId, action, result, ...extra }),
-        addPoint(SIDE.US),
-      ]);
-      return id;
+      return await recordContact({ player_id: slot.playerId, action, result, ...extra });
     } catch (err) {
-      console.error('tapAndScore', err);
-      showToast(`Recording error: ${err?.message ?? err}`, 'error');
+      console.error('tapAndScore recordContact', err);
+      showToast(`Stat not recorded: ${err?.message ?? err}`, 'error');
     }
   };
 
   const tapAndScoreThem = async (action, result, extra = {}) => {
     flashJersey();
+    addPoint(SIDE.THEM);
     try {
-      await Promise.all([
-        recordContact({ player_id: slot.playerId, action, result, ...extra }),
-        addPoint(SIDE.THEM),
-      ]);
+      await recordContact({ player_id: slot.playerId, action, result, ...extra });
     } catch (err) {
-      console.error('tapAndScoreThem', err);
-      showToast(`Recording error: ${err?.message ?? err}`, 'error');
+      console.error('tapAndScoreThem recordContact', err);
+      showToast(`Stat not recorded: ${err?.message ?? err}`, 'error');
     }
   };
 

@@ -245,7 +245,15 @@ export const useMatchStore = create((set, get) => ({
       if (serveSide === SIDE.US) { newServeSide = SIDE.THEM; }
     }
 
-    const prevRun  = s.currentRun;
+    // ── Commit score immediately ───────────────────────────────────────────
+    // This MUST be the first set() call. Everything below can theoretically
+    // throw (rotation math, libero swap, DB write) — the score must survive
+    // any of those failures. Two set() calls = two renders, but that is
+    // infinitely better than the score not updating at all.
+    set({ ourScore, oppScore });
+
+    // ── Rotation / libero / run calculations ──────────────────────────────
+    const prevRun  = s.currentRun ?? { side: null, count: 0 };
     const newRun   = prevRun.side === side
       ? { side, count: Math.min(25, prevRun.count + 1) }
       : { side, count: 1 };
@@ -267,7 +275,7 @@ export const useMatchStore = create((set, get) => ({
     const { lineup: finalLineup, liberoOnCourt, liberoReplacedPlayerId,
             liberoReplacedName, liberoReplacedJersey, liberoReplacedPositionLabel } = liberoState;
 
-    // 1. Push action entry with null rallyId — backfilled after DB write
+    // ── Action history entry (for undo) ───────────────────────────────────
     const actionKey = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
@@ -298,11 +306,9 @@ export const useMatchStore = create((set, get) => ({
       });
     }
 
-    // 2. Update UI immediately — score, rotation, libero swap all visible at once
+    // ── Full state update (rotation, libero, rally metadata) ──────────────
     set({
       rallyPhase:    'pre_serve',
-      ourScore,
-      oppScore,
       serveSide:     newServeSide,
       lineup:        finalLineup,
       rallyCount:    rallyCount + 1,
@@ -766,6 +772,10 @@ export const useMatchStore = create((set, get) => ({
       opponent_contact: true,
       timestamp:        Date.now(),
     };
+    // Score update is independent of the DB write — call it first so the
+    // scoreboard always reflects the tap even if the contact write fails.
+    get().addPoint(pointSide);
+    setFeed(set, feedLabel);
     try {
       const id = await db.contacts.add(contactFull);
       const prevHistory = get().actionHistory;
@@ -773,11 +783,8 @@ export const useMatchStore = create((set, get) => ({
         committedContacts: [...get().committedContacts, { ...contactFull, id }],
         actionHistory: [{ type: 'opp_contact', contactId: id }, ...prevHistory].slice(0, ACTION_HISTORY_LIMIT),
       });
-      setFeed(set, feedLabel);
-      await get().addPoint(pointSide);
     } catch (err) {
-      console.error('addOppPoint', err);
-      useUiStore.getState().showToast(`Recording error: ${err?.message ?? err}`, 'error');
+      console.error('addOppPoint contact write', err);
     }
   },
 
