@@ -326,7 +326,10 @@ export const useMatchStore = create((set, get) => ({
     const winner = checkSetWin(ourScore, oppScore, setNumber, s.format, s.lastSetScore);
     if (winner) set({ pendingSetWin: winner });
 
-    // 3. Persist to DB — roll back optimistic state on failure
+    // 3. Persist rally to DB — best effort. The score is already committed to
+    //   Zustand state above and must NOT be rolled back on failure: a dropped
+    //   rally row only breaks undo for that point, while a score rollback would
+    //   corrupt the live scoreboard in a way the user can't recover from.
     try {
       const rallyId = await db.rallies.add({
         set_id:       s.currentSetId,
@@ -337,34 +340,16 @@ export const useMatchStore = create((set, get) => ({
         timestamp:    Date.now(),
       });
 
-      // 4. Backfill real rallyId so undo can delete the correct row
+      // Backfill real rallyId so undo can delete the correct row
       set((cur) => ({
         actionHistory: cur.actionHistory.map((a) =>
           a._actionKey === actionKey ? { ...a, rallyId } : a
         ),
       }));
     } catch (err) {
-      // DB write failed — roll back the optimistic UI update
-      set({
-        rallyPhase:                  s.rallyPhase,
-        ourScore:                    s.ourScore,
-        oppScore:                    s.oppScore,
-        serveSide:                   s.serveSide,
-        lineup:                      s.lineup,
-        rallyCount:                  s.rallyCount,
-        rotationNum:                 s.rotationNum,
-        currentRun:                  s.currentRun,
-        pointHistory:                s.pointHistory,
-        committedRallies:            s.committedRallies,
-        pendingSetWin:               s.pendingSetWin,
-        liberoOnCourt:               s.liberoOnCourt,
-        liberoReplacedPlayerId:      s.liberoReplacedPlayerId,
-        liberoReplacedName:          s.liberoReplacedName,
-        liberoReplacedJersey:        s.liberoReplacedJersey,
-        liberoReplacedPositionLabel: s.liberoReplacedPositionLabel,
-        actionHistory:               s.actionHistory,
-      });
-      useUiStore.getState().showToast('Score not saved — storage error. Please try again.', 'error');
+      // Rally write failed — score stays as-is. Undo for this point won't work
+      // but the live score is correct, which is what matters during a match.
+      console.error('[VBStat] rallies.add failed (score kept):', err);
     }
   },
 

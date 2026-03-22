@@ -2,6 +2,25 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('VBAPPv2');
 
+// v9: re-declare every table that was only ever defined in v1.
+//   If a prior failed migration left the DB in a state where these tables
+//   were never created, this forces Dexie to create them. If they already
+//   exist, Dexie no-ops. No data is ever lost by re-declaring the same schema.
+db.version(9).stores({
+  rallies:       '++id, set_id, rally_number',
+  sets:          '++id, match_id, set_number',
+  lineups:       '++id, set_id, player_id',
+  substitutions: '++id, set_id, rally_number',
+  organizations: '++id, name, type',
+  teams:         '++id, org_id, name',
+  seasons:       '++id, team_id, year',
+  players:       '++id, team_id, is_active',
+  opponents:     '++id, name',
+  saved_lineups: '++id, team_id',
+  contacts:      '++id, match_id, player_id, action, set_id, rally_id, rotation_num',
+  matches:       '++id, season_id, status, date',
+});
+
 // v8: remove compound indexes — they are not used by any query and are not
 //   supported in Safari/WebKit before iOS 15.2, causing the v7 migration to
 //   fail and breaking all IndexedDB writes on iPad.
