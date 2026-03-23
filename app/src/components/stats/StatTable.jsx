@@ -7,7 +7,7 @@ import clsx from 'clsx';
  * columns: [{ key, label, fmt?, defaultDesc? }]
  * rows:    [{ id, name, ...statValues }]
  */
-export function StatTable({ columns, rows, totalsRow }) {
+export function StatTable({ columns, rows, totalsRow, onRowClick, selectedRowId }) {
   const [sortKey, setSortKey] = useState(columns[1]?.key ?? columns[0].key);
   const [desc, setDesc] = useState(true);
 
@@ -53,9 +53,13 @@ export function StatTable({ columns, rows, totalsRow }) {
           {sorted.map((row, i) => (
             <tr
               key={row.id}
+              onClick={onRowClick ? () => onRowClick(row) : undefined}
               className={clsx(
                 'border-b border-slate-800',
-                i % 2 === 0 ? 'bg-transparent' : 'bg-slate-900/40'
+                onRowClick && 'cursor-pointer active:brightness-110',
+                selectedRowId !== undefined && String(row.id) === String(selectedRowId)
+                  ? 'bg-primary/10'
+                  : i % 2 === 0 ? 'bg-transparent' : 'bg-slate-900/40'
               )}
             >
               {columns.map((col) => (
