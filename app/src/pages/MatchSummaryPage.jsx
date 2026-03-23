@@ -4,7 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { computeMatchStats, computeSetTrends, computeRallyHistogram,
          computePlayerStats, computeTeamStats, computeRotationStats, computePointQuality,
-         computeServeZoneStats } from '../stats/engine';
+         computeServeZoneStats, computeISvsOOS, computeTransitionAttack } from '../stats/engine';
 import { getRalliesForMatch } from '../stats/queries';
 import { exportMatchCSV, exportMatchPDF, exportMaxPrepsCSV } from '../stats/export';
 import { fmtHitting, fmtPassRating, fmtPct, fmtCount, fmtDate, fmtVER } from '../stats/formatters';
@@ -526,12 +526,14 @@ export function MatchSummaryPage() {
     const fr = rawRallies.filter(r => r.set_id === selectedSetId);
     return {
       ...stats,
-      contacts:     fc,
-      players:      computePlayerStats(fc, 1),
-      team:         computeTeamStats(fc, 1),
-      rotation:     computeRotationStats(fr),
-      pointQuality: computePointQuality(fc),
-      serveZones:   computeServeZoneStats(fc),
+      contacts:         fc,
+      players:          computePlayerStats(fc, 1),
+      team:             computeTeamStats(fc, 1),
+      rotation:         computeRotationStats(fr),
+      pointQuality:     computePointQuality(fc),
+      serveZones:       computeServeZoneStats(fc),
+      isOos:            computeISvsOOS(fc, fr),
+      transitionAttack: computeTransitionAttack(fc, fr),
     };
   }, [stats, rawRallies, selectedSetId]);
 
@@ -905,7 +907,61 @@ export function MatchSummaryPage() {
             )}
 
             {tab === 'attacking' && (
-              <StatTable columns={TAB_COLUMNS['attacking']} rows={playerRows} totalsRow={statTotals?.attacking} />
+              <div className="space-y-4">
+                <StatTable columns={TAB_COLUMNS['attacking']} rows={playerRows} totalsRow={statTotals?.attacking} />
+
+                {/* In System vs Out of System */}
+                {displayStats?.isOos && (
+                  (displayStats.isOos.total.is.ta > 0 || displayStats.isOos.total.oos.ta > 0)
+                ) && (
+                  <div className="bg-surface rounded-xl p-3">
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">In System vs Out of System</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { label: 'IS ATK',  val: fmtCount(displayStats.isOos.total.is.ta)        },
+                        { label: 'IS Win%', val: fmtPct(displayStats.isOos.total.is.win_pct)     },
+                        { label: 'IS K%',   val: fmtPct(displayStats.isOos.total.is.k_pct)       },
+                        { label: 'IS HIT%', val: fmtHitting(displayStats.isOos.total.is.hit_pct) },
+                        { label: 'OOS ATK',  val: fmtCount(displayStats.isOos.total.oos.ta)         },
+                        { label: 'OOS Win%', val: fmtPct(displayStats.isOos.total.oos.win_pct)      },
+                        { label: 'OOS K%',   val: fmtPct(displayStats.isOos.total.oos.k_pct)        },
+                        { label: 'OOS HIT%', val: fmtHitting(displayStats.isOos.total.oos.hit_pct)  },
+                      ].map(({ label, val }) => (
+                        <div key={label} className="bg-slate-800/60 rounded-lg p-2 text-center">
+                          <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">{label}</div>
+                          <div className="text-lg font-black text-primary mt-0.5">{val}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Freeball & Transition Attack */}
+                {displayStats?.transitionAttack && (
+                  (displayStats.transitionAttack.free.total.ta > 0 || displayStats.transitionAttack.transition.total.ta > 0)
+                ) && (
+                  <div className="bg-surface rounded-xl p-3">
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Freeball &amp; Transition Attack</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {[
+                        { label: 'FB ATK',  val: fmtCount(displayStats.transitionAttack.free.total.ta)            },
+                        { label: 'FB Win%', val: fmtPct(displayStats.transitionAttack.free.total.win_pct)         },
+                        { label: 'FB K%',   val: fmtPct(displayStats.transitionAttack.free.total.k_pct)           },
+                        { label: 'FB HIT%', val: fmtHitting(displayStats.transitionAttack.free.total.hit_pct)     },
+                        { label: 'TR ATK',  val: fmtCount(displayStats.transitionAttack.transition.total.ta)       },
+                        { label: 'TR Win%', val: fmtPct(displayStats.transitionAttack.transition.total.win_pct)   },
+                        { label: 'TR K%',   val: fmtPct(displayStats.transitionAttack.transition.total.k_pct)     },
+                        { label: 'TR HIT%', val: fmtHitting(displayStats.transitionAttack.transition.total.hit_pct) },
+                      ].map(({ label, val }) => (
+                        <div key={label} className="bg-slate-800/60 rounded-lg p-2 text-center">
+                          <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">{label}</div>
+                          <div className="text-lg font-black text-primary mt-0.5">{val}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {tab === 'blocking' && (
