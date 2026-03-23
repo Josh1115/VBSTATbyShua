@@ -284,12 +284,24 @@ export function HomePage() {
           <rect x="0" y="30" width="600" height="24" fill="url(#vb-net-mesh)" className="net-wave" />
           <rect x="0" y="25" width="600" height="6" fill="white" />
           <rect x="0" y="54" width="600" height="3" fill="white" />
-          <rect x="44"  y="6"  width="3" height="19" fill="white" />
-          <rect x="44"  y="6"  width="3" height="4"  fill="#ef4444" />
-          <rect x="44"  y="14" width="3" height="4"  fill="#ef4444" />
-          <rect x="553" y="6"  width="3" height="19" fill="white" />
-          <rect x="553" y="6"  width="3" height="4"  fill="#ef4444" />
-          <rect x="553" y="14" width="3" height="4"  fill="#ef4444" />
+          {/* Left antenna — full-height rod with alternating red/white stripes */}
+          <rect x="44" y="0"  width="3" height="57" fill="white" />
+          <rect x="44" y="0"  width="3" height="4"  fill="#ef4444" />
+          <rect x="44" y="8"  width="3" height="4"  fill="#ef4444" />
+          <rect x="44" y="16" width="3" height="4"  fill="#ef4444" />
+          <rect x="44" y="24" width="3" height="4"  fill="#ef4444" />
+          <rect x="44" y="32" width="3" height="4"  fill="#ef4444" />
+          <rect x="44" y="40" width="3" height="4"  fill="#ef4444" />
+          <rect x="44" y="48" width="3" height="4"  fill="#ef4444" />
+          {/* Right antenna */}
+          <rect x="553" y="0"  width="3" height="57" fill="white" />
+          <rect x="553" y="0"  width="3" height="4"  fill="#ef4444" />
+          <rect x="553" y="8"  width="3" height="4"  fill="#ef4444" />
+          <rect x="553" y="16" width="3" height="4"  fill="#ef4444" />
+          <rect x="553" y="24" width="3" height="4"  fill="#ef4444" />
+          <rect x="553" y="32" width="3" height="4"  fill="#ef4444" />
+          <rect x="553" y="40" width="3" height="4"  fill="#ef4444" />
+          <rect x="553" y="48" width="3" height="4"  fill="#ef4444" />
         </svg>
 
         <div className="absolute inset-0 crt-scanlines pointer-events-none overflow-hidden" aria-hidden="true" />
