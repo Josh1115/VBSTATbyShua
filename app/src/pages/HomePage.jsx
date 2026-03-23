@@ -242,7 +242,7 @@ export function HomePage() {
   const seasonRecordAnimated = useRef(false);
 
   useEffect(() => {
-    if (!seasonRecord || seasonRecord.total === 0) return;
+    if (!seasonRecord) return;
     if (seasonRecordAnimated.current) {
       setDisplaySeasonRecord({ wins: seasonRecord.wins, losses: seasonRecord.losses });
       return;
@@ -375,7 +375,7 @@ export function HomePage() {
         </div>
 
         {/* ── Season record card (shown when default team + season set) ── */}
-        {seasonRecord && seasonRecord.total > 0 && (
+        {seasonRecord && (
           <div className="bg-surface rounded-xl overflow-hidden animate-slide-up-fade card-top-glow" style={{ animationDelay: '200ms' }}>
             {/* Header */}
             <div className="px-4 py-2 border-b border-slate-700/60 text-center">
