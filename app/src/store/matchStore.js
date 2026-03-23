@@ -575,7 +575,13 @@ export const useMatchStore = create((set, get) => ({
     set({
       actionHistory:     [{ type: 'contact', contactId: id, assistId, prevAssistResult, autoSetId }, ...prevHistory].slice(0, ACTION_HISTORY_LIMIT),
       committedContacts: newCommittedContacts,
-      ...(contactData.action === ACTION.SERVE || contactData.action === ACTION.PASS
+      // Only transition to in_rally when the ball is live:
+      //   - a successful serve (IN) puts the ball in play
+      //   - a pass follows a live serve
+      // An ACE ends the rally immediately — addPoint already set pre_serve and
+      // must not be overwritten here or isServer stays false for the next rally.
+      ...((contactData.action === ACTION.PASS ||
+           (contactData.action === ACTION.SERVE && contactData.result === RESULT.IN))
         ? { rallyPhase: 'in_rally' } : {}),
     });
 
