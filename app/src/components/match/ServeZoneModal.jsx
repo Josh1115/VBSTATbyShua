@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 
 const W = 912;
 const H = 608;
@@ -15,19 +15,13 @@ function calcZone(nx, ny) {
 
 export function ServeZoneModal({ pendingContact, reticles, onConfirm, onDismiss }) {
   const courtRef = useRef(null);
-  const [pendingCoords, setPendingCoords] = useState(null);
 
   function handleCourtTap(e) {
     e.preventDefault();
     const rect = courtRef.current.getBoundingClientRect();
     const nx = (e.clientX - rect.left) / rect.width;
     const ny = (e.clientY - rect.top) / rect.height;
-    setPendingCoords({ nx, ny, zone: calcZone(nx, ny) });
-  }
-
-  function handleConfirm() {
-    if (!pendingCoords) return;
-    onConfirm(pendingContact.contactId, pendingCoords.nx, pendingCoords.ny, pendingCoords.zone);
+    onConfirm(pendingContact.contactId, nx, ny, calcZone(nx, ny));
   }
 
   return (
@@ -102,42 +96,16 @@ export function ServeZoneModal({ pendingContact, reticles, onConfirm, onDismiss 
               />
             )
           )}
-
-          {/* Pending reticle (before confirm) */}
-          {pendingCoords && (
-            pendingContact.result === 'ace' ? (
-              <text
-                x={pendingCoords.nx * W} y={pendingCoords.ny * H}
-                textAnchor="middle" dominantBaseline="middle"
-                fontSize={18} fill="#f59e0b" opacity={0.65}
-              >★</text>
-            ) : (
-              <circle
-                cx={pendingCoords.nx * W} cy={pendingCoords.ny * H}
-                r={8} fill="none" stroke="#34d399" strokeWidth={2} opacity={0.65}
-              />
-            )
-          )}
         </svg>
       </div>
 
-      {/* Compact control row below court */}
-      <div className="flex items-center gap-4">
-        <p className="text-slate-400 text-sm">
-          Zone: <span className="text-white font-bold text-base">{pendingCoords?.zone ?? '—'}</span>
-        </p>
+      {/* SKIP only — tapping the court confirms immediately */}
+      <div className="flex items-center">
         <button
           onPointerDown={(e) => { e.preventDefault(); onDismiss(); }}
           className="px-6 py-2 rounded bg-slate-700 text-slate-300 text-sm font-semibold active:brightness-75 select-none"
         >
           SKIP
-        </button>
-        <button
-          onPointerDown={(e) => { e.preventDefault(); handleConfirm(); }}
-          disabled={!pendingCoords}
-          className="px-6 py-2 rounded bg-emerald-600 text-white text-sm font-bold active:brightness-75 select-none disabled:opacity-40 disabled:pointer-events-none"
-        >
-          CONFIRM ✓
         </button>
       </div>
     </div>
