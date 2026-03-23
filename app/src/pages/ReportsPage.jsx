@@ -10,6 +10,7 @@ import { TabBar } from '../components/ui/Tab';
 import { Spinner } from '../components/ui/Spinner';
 import { EmptyState } from '../components/ui/EmptyState';
 import { StatTable } from '../components/stats/StatTable';
+import { ServeReticlePlot, PlayerServePlacementCard } from '../components/stats/ServeReticlePlot';
 import { RotationSpotlight } from '../components/stats/RotationSpotlight';
 import { HittingBarChart } from '../components/charts/HittingBarChart';
 import { RotationRadarChart } from '../components/charts/RotationRadarChart';
@@ -151,8 +152,9 @@ const chipClass = (active) =>
 
 export function ReportsPage() {
   const [tab, setTab] = useState('team');
-  const [playerStatView,  setPlayerStatView]  = useState('serving');
-  const [playerServeView, setPlayerServeView] = useState('all');
+  const [playerStatView,        setPlayerStatView]        = useState('serving');
+  const [playerServeView,       setPlayerServeView]       = useState('all');
+  const [selectedServingPlayerId, setSelectedServingPlayerId] = useState(null);
   const [selectedTeamId,   setSelectedTeamId]   = useState(() => getIntStorage(STORAGE_KEYS.DEFAULT_TEAM_ID,   null) ?? '');
   const [selectedSeasonId, setSelectedSeasonId] = useState(() => getIntStorage(STORAGE_KEYS.DEFAULT_SEASON_ID, null) ?? '');
   const [selectedMatchIds, setSelectedMatchIds] = useState(null); // null = all matches
@@ -191,6 +193,10 @@ export function ReportsPage() {
   );
   const playerNames = useMemo(
     () => Object.fromEntries((players ?? []).map(p => [p.id, p.name])),
+    [players]
+  );
+  const playerJerseys = useMemo(
+    () => Object.fromEntries((players ?? []).map(p => [p.id, p.jersey_number ?? ''])),
     [players]
   );
 
@@ -601,7 +607,7 @@ export function ReportsPage() {
                     ].map(({ value, label }) => (
                       <button
                         key={value}
-                        onClick={() => setPlayerServeView(value)}
+                        onClick={() => { setPlayerServeView(value); setSelectedServingPlayerId(null); }}
                         className={chipClass(playerServeView === value)}
                       >
                         {label}
@@ -612,7 +618,25 @@ export function ReportsPage() {
 
                 {/* Stat table for active view */}
                 {playerStatView === 'serving' && (
-                  <StatTable columns={SERVING_COLS[playerServeView]} rows={playerRows} />
+                  <>
+                    <StatTable
+                      columns={SERVING_COLS[playerServeView]}
+                      rows={playerRows}
+                      onRowClick={(row) => setSelectedServingPlayerId(id => String(id) === String(row.id) ? null : row.id)}
+                      selectedRowId={selectedServingPlayerId}
+                    />
+                    {selectedServingPlayerId && contacts.length > 0 && (() => {
+                      const player = playerRows.find(r => String(r.id) === String(selectedServingPlayerId));
+                      return player ? (
+                        <PlayerServePlacementCard
+                          player={player}
+                          contacts={contacts}
+                          playerJerseys={playerJerseys}
+                        />
+                      ) : null;
+                    })()}
+                    <ServeReticlePlot contacts={contacts} serveType={playerServeView} />
+                  </>
                 )}
                 {playerStatView === 'passing' && (
                   <StatTable columns={TAB_COLUMNS.passing} rows={playerRows} />
