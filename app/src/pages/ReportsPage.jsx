@@ -4,7 +4,7 @@ import { getIntStorage, STORAGE_KEYS } from '../utils/storage';
 import { db } from '../db/schema';
 import { computeSeasonStats } from '../stats/engine';
 import { fmtHitting, fmtPassRating, fmtPct, fmtCount, fmtVER } from '../stats/formatters';
-import { ROTATION_COLS } from '../stats/columns';
+import { ROTATION_COLS, SERVING_COLS, TAB_COLUMNS } from '../stats/columns';
 import { PageHeader } from '../components/layout/PageHeader';
 import { TabBar } from '../components/ui/Tab';
 import { Spinner } from '../components/ui/Spinner';
@@ -151,6 +151,8 @@ const chipClass = (active) =>
 
 export function ReportsPage() {
   const [tab, setTab] = useState('team');
+  const [playerStatView,  setPlayerStatView]  = useState('serving');
+  const [playerServeView, setPlayerServeView] = useState('all');
   const [selectedTeamId,   setSelectedTeamId]   = useState(() => getIntStorage(STORAGE_KEYS.DEFAULT_TEAM_ID,   null) ?? '');
   const [selectedSeasonId, setSelectedSeasonId] = useState(() => getIntStorage(STORAGE_KEYS.DEFAULT_SEASON_ID, null) ?? '');
   const [selectedMatchIds, setSelectedMatchIds] = useState(null); // null = all matches
@@ -569,7 +571,62 @@ export function ReportsPage() {
 
             {/* ── Player Stats ─────────────────────────────────────────── */}
             {tab === 'players' && (
-              <StatTable columns={PLAYER_COLS} rows={playerRows} />
+              <>
+                {/* Stat category sub-toggle */}
+                <div className="flex gap-1.5 flex-wrap">
+                  {[
+                    { value: 'serving',   label: 'Serving'   },
+                    { value: 'passing',   label: 'Passing'   },
+                    { value: 'attacking', label: 'Attacking' },
+                    { value: 'blocking',  label: 'Blocking'  },
+                    { value: 'defense',   label: 'Defense'   },
+                  ].map(({ value, label }) => (
+                    <button
+                      key={value}
+                      onClick={() => setPlayerStatView(value)}
+                      className={chipClass(playerStatView === value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Serve type sub-toggle (only when serving is active) */}
+                {playerStatView === 'serving' && (
+                  <div className="flex gap-1.5 flex-wrap mt-1">
+                    {[
+                      { value: 'all',   label: 'All'       },
+                      { value: 'float', label: 'Float'     },
+                      { value: 'top',   label: 'Top Spin'  },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        onClick={() => setPlayerServeView(value)}
+                        className={chipClass(playerServeView === value)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Stat table for active view */}
+                {playerStatView === 'serving' && (
+                  <StatTable columns={SERVING_COLS[playerServeView]} rows={playerRows} />
+                )}
+                {playerStatView === 'passing' && (
+                  <StatTable columns={TAB_COLUMNS.passing} rows={playerRows} />
+                )}
+                {playerStatView === 'attacking' && (
+                  <StatTable columns={TAB_COLUMNS.attacking} rows={playerRows} />
+                )}
+                {playerStatView === 'blocking' && (
+                  <StatTable columns={TAB_COLUMNS.blocking} rows={playerRows} />
+                )}
+                {playerStatView === 'defense' && (
+                  <StatTable columns={TAB_COLUMNS.defense} rows={playerRows} />
+                )}
+              </>
             )}
 
             {/* ── Rotation Analysis ────────────────────────────────────── */}
