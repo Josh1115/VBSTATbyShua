@@ -371,27 +371,6 @@ export function HomePage() {
             </div>
           </button>
 
-          {/* Secondary: Seasons + Teams */}
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => navigate('/seasons')}
-              className="group card-top-glow bg-surface rounded-xl p-4 text-left hover:bg-slate-700 hover:brightness-110 transition-[transform,filter,background-color] duration-75 active:scale-[0.97] active:brightness-90 animate-slide-up-fade"
-              style={{ animationDelay: '80ms' }}
-            >
-              <span className="text-3xl mb-2 inline-block transition-transform duration-75 group-active:-translate-y-1.5 group-active:scale-125">📅</span>
-              <div className="font-semibold text-sm">Seasons</div>
-              <div className="text-xs text-slate-400">Browse by season</div>
-            </button>
-            <button
-              onClick={() => navigate('/teams')}
-              className="group card-top-glow bg-surface rounded-xl p-4 text-left hover:bg-slate-700 hover:brightness-110 transition-[transform,filter,background-color] duration-75 active:scale-[0.97] active:brightness-90 animate-slide-up-fade"
-              style={{ animationDelay: '160ms' }}
-            >
-              <span className="text-3xl mb-2 inline-block transition-transform duration-75 group-active:-translate-y-1.5 group-active:scale-125">👥</span>
-              <div className="font-semibold text-sm">Teams</div>
-              <div className="text-xs text-slate-400">Rosters</div>
-            </button>
-          </div>
         </div>
 
         {/* ── Season record card (shown when default team + season set) ── */}
