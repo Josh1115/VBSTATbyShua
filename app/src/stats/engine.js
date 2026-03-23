@@ -330,9 +330,12 @@ export function computeISvsOOS(contacts, rallies) {
     const rating = parseInt(pass.result, 10);
     const isIS = rating === 3;
 
-    // Find the first offensive contact after the pass by timestamp
+    // Collect all offensive contacts after the pass, sorted earliest-first.
+    // We then pick the terminal one: first kill, then first error, then last
+    // attempt. This handles multi-swing rallies where an earlier "attempt"
+    // precedes the eventual kill rather than locking in a 0-kill result.
     const passTs = pass.timestamp ?? 0;
-    const atk = rallyContacts
+    const attacks = rallyContacts
       .filter((c) => {
         const ts = c.timestamp ?? 0;
         if (ts <= passTs) return false;
@@ -341,8 +344,13 @@ export function computeISvsOOS(contacts, rallies) {
           (c.action === 'set' && c.result === 'ball_handling_error')
         );
       })
-      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0))[0];
-    if (!atk) continue;
+      .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+    if (!attacks.length) continue;
+
+    const atk =
+      attacks.find((c) => c.result === 'kill') ??
+      attacks.find((c) => c.result === 'error' || c.result === 'ball_handling_error') ??
+      attacks[attacks.length - 1];
 
     const won  = rally.point_winner === 'us' ? 1 : 0;
     const isK  = atk.result === 'kill';
@@ -432,8 +440,9 @@ export function computeTransitionAttack(contacts, rallies) {
       const digTs  = dig.timestamp ?? 0;
       const nextTs = nextDig != null ? (nextDig.timestamp ?? Infinity) : Infinity;
 
-      // First offensive contact in window (after dig, before next dig)
-      const atk = rallyContacts.find((c) => {
+      // Collect all offensive contacts in the dig window, then pick the
+      // terminal one: first kill, then first error, then last attempt.
+      const attacks = rallyContacts.filter((c) => {
         const ts = c.timestamp ?? 0;
         if (ts <= digTs || ts >= nextTs) return false;
         return (
@@ -441,7 +450,12 @@ export function computeTransitionAttack(contacts, rallies) {
           (c.action === 'set' && c.result === 'ball_handling_error')
         );
       });
-      if (!atk) continue;
+      if (!attacks.length) continue;
+
+      const atk =
+        attacks.find((c) => c.result === 'kill') ??
+        attacks.find((c) => c.result === 'error' || c.result === 'ball_handling_error') ??
+        attacks[attacks.length - 1];
 
       const isK  = atk.result === 'kill';
       const isAE = atk.result === 'error' || atk.result === 'ball_handling_error';
