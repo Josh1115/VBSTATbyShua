@@ -530,17 +530,33 @@ export function MatchSummaryPage() {
     [stats, playerNames]
   );
 
-  const servingTotals = useMemo(() => {
+  const statTotals = useMemo(() => {
     if (!playerRows.length) return null;
     const sum = (key) => playerRows.reduce((acc, r) => acc + (r[key] ?? 0), 0);
 
+    const sp = sum('sp'), mp = sum('mp');
+
+    // Serving
     const sa = sum('sa'), ace = sum('ace'), se = sum('se'),
           se_ob = sum('se_ob'), se_net = sum('se_net');
     const f_sa = sum('f_sa'), f_ace = sum('f_ace'), f_se = sum('f_se');
     const t_sa = sum('t_sa'), t_ace = sum('t_ace'), t_se = sum('t_se');
-    const sp = sum('sp'), mp = sum('mp');
+
+    // Passing & setting
+    const pa = sum('pa'), p0 = sum('p0'), p1 = sum('p1'),
+          p2 = sum('p2'), p3 = sum('p3');
+    const ast = sum('ast'), bhe = sum('bhe');
+
+    // Attacking & blocking
+    const ta = sum('ta'), k = sum('k'), ae = sum('ae');
+    const bs = sum('bs'), ba = sum('ba'), be = sum('be');
+
+    // Defense
+    const dig = sum('dig'), de = sum('de'),
+          fbr = sum('fbr'), fbs = sum('fbs');
 
     return {
+      // Serving views
       all: {
         name: 'TOTAL', sp, mp, sa, ace, se, se_ob, se_net,
         ace_pct:  sa > 0 ? ace / sa : null,
@@ -557,6 +573,33 @@ export function MatchSummaryPage() {
         name: 'TOTAL', sp, mp, t_sa, t_ace, t_se,
         t_ace_pct: t_sa > 0 ? t_ace / t_sa : null,
         t_si_pct:  t_sa > 0 ? (t_sa - t_se) / t_sa : null,
+      },
+      // Passing views
+      passing: {
+        name: 'TOTAL', sp, mp, pa, p0, p1, p2, p3,
+        apr:    pa > 0 ? (p1 + p2 * 2 + p3 * 3) / pa : null,
+        pp_pct: pa > 0 ? p3 / pa : null,
+      },
+      setting: {
+        name: 'TOTAL', sp, mp, ast, bhe,
+        aps: sp > 0 ? ast / sp : null,
+      },
+      // Attacking views
+      attacking: {
+        name: 'TOTAL', sp, mp, ta, k, ae,
+        hit_pct:   ta > 0 ? (k - ae) / ta : null,
+        k_pct:     ta > 0 ? k / ta : null,
+        kps:       sp > 0 ? k / sp : null,
+        pos_label: null, pos_mult: null, ver: null,
+      },
+      blocking: {
+        name: 'TOTAL', sp, mp, bs, ba, be,
+        bps: sp > 0 ? (bs + ba * 0.5) / sp : null,
+      },
+      // Defense view
+      defense: {
+        name: 'TOTAL', sp, mp, dig, de, fbr, fbs,
+        dips: sp > 0 ? dig / sp : null,
       },
     };
   }, [playerRows]);
@@ -774,7 +817,7 @@ export function MatchSummaryPage() {
                   value={serveView}
                   onChange={setServeView}
                 />
-                <StatTable columns={SERVING_COLS[serveView]} rows={playerRows} totalsRow={servingTotals?.[serveView]} />
+                <StatTable columns={SERVING_COLS[serveView]} rows={playerRows} totalsRow={statTotals?.[serveView]} />
                 {stats?.serveZones && (
                   <ServeZoneGrid zones={stats.serveZones} />
                 )}
@@ -788,7 +831,7 @@ export function MatchSummaryPage() {
                   value={passingView}
                   onChange={setPassingView}
                 />
-                <StatTable columns={TAB_COLUMNS[passingView]} rows={playerRows} />
+                <StatTable columns={TAB_COLUMNS[passingView]} rows={playerRows} totalsRow={statTotals?.[passingView]} />
               </>
             )}
 
@@ -799,7 +842,7 @@ export function MatchSummaryPage() {
                   value={attackingView}
                   onChange={setAttackingView}
                 />
-                <StatTable columns={TAB_COLUMNS[attackingView]} rows={playerRows} />
+                <StatTable columns={TAB_COLUMNS[attackingView]} rows={playerRows} totalsRow={statTotals?.[attackingView]} />
               </>
             )}
 
@@ -811,7 +854,7 @@ export function MatchSummaryPage() {
                   onChange={setDefenseView}
                 />
                 {defenseView === 'defense' && (
-                  <StatTable columns={TAB_COLUMNS['defense']} rows={playerRows} />
+                  <StatTable columns={TAB_COLUMNS['defense']} rows={playerRows} totalsRow={statTotals?.defense} />
                 )}
                 {defenseView === 'compare' && (
                   <PlayerComparison playerRows={playerRows} />
