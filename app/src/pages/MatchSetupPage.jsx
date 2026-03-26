@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getStorageItem, getIntStorage, STORAGE_KEYS } from '../utils/storage';
 import { useUiStore, selectShowToast } from '../store/uiStore';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -20,8 +20,10 @@ export function MatchSetupPage() {
   const scheduledMatchId = searchParams.get('match') ? Number(searchParams.get('match')) : null;
 
   const [seasonId,  setSeasonId]  = useState(searchParams.get('season') ?? '');
-  const [opponent,      setOpponent]      = useState('');
-  const [opponentAbbr,  setOpponentAbbr]  = useState('');
+  const [opponent,           setOpponent]           = useState('');
+  const [opponentAbbr,       setOpponentAbbr]       = useState('');
+  const [opponentRecord,     setOpponentRecord]     = useState('');
+  const [opponentMaxprepsRank, setOpponentMaxprepsRank] = useState('');
   const [conference,    setConference]    = useState('non-con');
   const [location,      setLocation]      = useState('home');
   const [matchType,     setMatchType]     = useState('reg-season');
@@ -54,6 +56,11 @@ export function MatchSetupPage() {
 
   const selectedSeason = (seasons ?? []).find((s) => s.id === Number(seasonId));
 
+  const selectedTeam = useLiveQuery(
+    () => selectedSeason?.team_id ? db.teams.get(selectedSeason.team_id) : Promise.resolve(null),
+    [selectedSeason?.team_id]
+  );
+
   const players = useLiveQuery(
     () => selectedSeason
       ? db.players.where('team_id').equals(selectedSeason.team_id).filter((p) => p.is_active).toArray()
@@ -85,6 +92,16 @@ export function MatchSetupPage() {
     }
   }, [scheduledMatch, prefilled]);
 
+  // When the selected team changes, reset jersey colors to first available if current pick isn't in the team's palette
+  useEffect(() => {
+    if (!selectedTeam) return;
+    const toIds = (v) => Array.isArray(v) ? v : (v ? [v] : []);
+    const teamIds   = toIds(selectedTeam.team_jersey_color);
+    const liberoIds = toIds(selectedTeam.libero_jersey_color);
+    if (teamIds.length   && !teamIds.includes(teamJerseyColor))     setTeamJerseyColor(teamIds[0]);
+    if (liberoIds.length && !liberoIds.includes(liberoJerseyColor)) setLiberoJerseyColor(liberoIds[0]);
+  }, [selectedTeam]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const applyLoadedLineup = (sl) => {
     setLineupState(sl.serve_order.map(String));
     setStartZone(sl.start_zone ?? 1);
@@ -98,6 +115,7 @@ export function MatchSetupPage() {
     if (!seasonId) { setError('Select a season.'); return; }
     if (!opponent.trim()) { setError('Enter opponent name.'); return; }
     if (lineup.some((id) => !id)) { setError('Assign a player to every position.'); return; }
+    if (new Set(lineup).size !== lineup.length) { setError('Each player can only appear once in the lineup.'); return; }
 
     setSaving(true);
     try {
@@ -115,31 +133,35 @@ export function MatchSetupPage() {
       let effectiveMatchId;
       if (scheduledMatchId) {
         await db.matches.update(scheduledMatchId, {
-          opponent_id:    oppRecord.id,
-          opponent_name:  oppRecord.name,
-          opponent_abbr:  opponentAbbr.trim().toUpperCase() || null,
-          status:         MATCH_STATUS.IN_PROGRESS,
+          opponent_id:           oppRecord.id,
+          opponent_name:         oppRecord.name,
+          opponent_abbr:         opponentAbbr.trim().toUpperCase() || null,
+          opponent_record:       opponentRecord.trim() || null,
+          opponent_maxpreps_rank: opponentMaxprepsRank !== '' ? parseInt(opponentMaxprepsRank, 10) : null,
+          status:                MATCH_STATUS.IN_PROGRESS,
           format,
-          last_set_score: lastSetScore,
+          last_set_score:        lastSetScore,
           location,
           conference,
-          match_type:     matchType,
-          date:           new Date().toISOString(),
+          match_type:            matchType,
+          date:                  new Date().toISOString(),
         });
         effectiveMatchId = scheduledMatchId;
       } else {
         effectiveMatchId = await db.matches.add({
-          season_id:      Number(seasonId),
-          opponent_id:    oppRecord.id,
-          opponent_name:  oppRecord.name,
-          opponent_abbr:  opponentAbbr.trim().toUpperCase() || null,
-          status:         MATCH_STATUS.IN_PROGRESS,
+          season_id:             Number(seasonId),
+          opponent_id:           oppRecord.id,
+          opponent_name:         oppRecord.name,
+          opponent_abbr:         opponentAbbr.trim().toUpperCase() || null,
+          opponent_record:       opponentRecord.trim() || null,
+          opponent_maxpreps_rank: opponentMaxprepsRank !== '' ? parseInt(opponentMaxprepsRank, 10) : null,
+          status:                MATCH_STATUS.IN_PROGRESS,
           format,
-          last_set_score: lastSetScore,
+          last_set_score:        lastSetScore,
           location,
           conference,
-          match_type:     matchType,
-          date:           new Date().toISOString(),
+          match_type:            matchType,
+          date:                  new Date().toISOString(),
         });
       }
 
@@ -186,7 +208,7 @@ export function MatchSetupPage() {
           </label>
           <select
             value={seasonId}
-            onChange={(e) => { setSeasonId(e.target.value); setLineupState(Array(6).fill('')); setLiberoId(''); }}
+            onChange={(e) => { setSeasonId(e.target.value); setLineupState(Array(6).fill('')); setSlotPositions(Array(6).fill('')); setLiberoId(''); }}
             className="w-full bg-surface border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
           >
             <option value="">Select season…</option>
@@ -222,6 +244,35 @@ export function MatchSetupPage() {
                 className="w-[56px] bg-surface border border-slate-600 text-white rounded-lg px-2 py-2 text-sm text-center font-bold uppercase tracking-widest focus:outline-none focus:border-primary placeholder:text-slate-600"
               />
             </div>
+          </div>
+        </div>
+
+        {/* Opponent record + MaxPreps rank */}
+        <div className="flex gap-2">
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">
+              Record <span className="normal-case font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={opponentRecord}
+              onChange={(e) => setOpponentRecord(e.target.value)}
+              placeholder="e.g. 12-3"
+              className="w-full bg-surface border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary placeholder:text-slate-600"
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">
+              MaxPreps Rank <span className="normal-case font-normal">(opt)</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={opponentMaxprepsRank}
+              onChange={(e) => setOpponentMaxprepsRank(e.target.value)}
+              placeholder="e.g. 42"
+              className="w-full bg-surface border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary placeholder:text-slate-600"
+            />
           </div>
         </div>
 
@@ -313,38 +364,41 @@ export function MatchSetupPage() {
           </div>
         </div>
 
-        {/* Jersey colors */}
+        {/* Jersey colors — options filtered to team's saved palette, fallback to all */}
         {(() => {
-          const TEAM_COLORS = [
-            { id: 'black', label: 'Black', bg: '#111827', border: '#374151', selectedBorder: '#374151' },
-            { id: 'white', label: 'White', bg: '#f8fafc', border: '#94a3b8', selectedBorder: '#6366f1' },
-            { id: 'blue',  label: 'Blue',  bg: '#1d4ed8', border: '#3b82f6', selectedBorder: '#6366f1' },
+          const ALL_COLORS = [
+            { id: 'black',  label: 'Black',  bg: '#111827', border: '#374151' },
+            { id: 'white',  label: 'White',  bg: '#f8fafc', border: '#94a3b8' },
+            { id: 'gray',   label: 'Gray',   bg: '#94a3b8', border: '#64748b' },
+            { id: 'red',    label: 'Red',    bg: '#dc2626', border: '#ef4444' },
+            { id: 'orange', label: 'Orange', bg: '#ea580c', border: '#f97316' },
+            { id: 'yellow', label: 'Yellow', bg: '#ca8a04', border: '#eab308' },
+            { id: 'green',  label: 'Green',  bg: '#16a34a', border: '#22c55e' },
+            { id: 'blue',   label: 'Blue',   bg: '#1d4ed8', border: '#3b82f6' },
+            { id: 'purple', label: 'Purple', bg: '#7c3aed', border: '#a855f7' },
+            { id: 'pink',   label: 'Pink',   bg: '#db2777', border: '#ec4899' },
           ];
-          const LIBERO_COLORS = [
-            { id: 'black', label: 'Black', bg: '#111827', border: '#374151', selectedBorder: '#374151' },
-            { id: 'blue',  label: 'Blue',  bg: '#1d4ed8', border: '#3b82f6', selectedBorder: '#6366f1' },
-            { id: 'white', label: 'White', bg: '#f8fafc', border: '#94a3b8', selectedBorder: '#6366f1' },
-            { id: 'gray',  label: 'Gray',  bg: '#94a3b8', border: '#64748b', selectedBorder: '#6366f1' },
-          ];
+          const toIds = (v) => Array.isArray(v) ? v : (v ? [v] : []);
+          const teamIds   = toIds(selectedTeam?.team_jersey_color);
+          const liberoIds = toIds(selectedTeam?.libero_jersey_color);
+          const teamColors   = teamIds.length   ? ALL_COLORS.filter(c => teamIds.includes(c.id))   : ALL_COLORS;
+          const liberoColors = liberoIds.length ? ALL_COLORS.filter(c => liberoIds.includes(c.id)) : ALL_COLORS;
           const Picker = ({ label, value, onChange, colors }) => (
             <div>
               <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">{label}</label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {colors.map((c) => (
                   <button
                     key={c.id}
                     type="button"
                     onClick={() => onChange(c.id)}
-                    className="flex-1 flex flex-col items-center gap-1 py-2 rounded-lg border transition-colors"
+                    className="flex flex-col items-center gap-1 py-2 px-3 rounded-lg border transition-colors"
                     style={{
-                      borderColor: value === c.id ? c.selectedBorder : c.border,
-                      boxShadow:   value === c.id ? `0 0 0 2px ${c.selectedBorder}` : 'none',
+                      borderColor: value === c.id ? 'var(--color-primary)' : c.border,
+                      boxShadow:   value === c.id ? '0 0 0 2px var(--color-primary)' : 'none',
                     }}
                   >
-                    <span
-                      className="w-6 h-6 rounded-full block"
-                      style={{ background: c.bg, border: `1px solid ${c.border}` }}
-                    />
+                    <span className="w-6 h-6 rounded-full block" style={{ background: c.bg, border: `1px solid ${c.border}` }} />
                     <span className="text-[11px] text-slate-400 leading-none">{c.label}</span>
                   </button>
                 ))}
@@ -353,8 +407,8 @@ export function MatchSetupPage() {
           );
           return (
             <>
-              <Picker label="Team Jersey Color"   value={teamJerseyColor}   onChange={setTeamJerseyColor}   colors={TEAM_COLORS} />
-              <Picker label="Libero Jersey Color"  value={liberoJerseyColor} onChange={setLiberoJerseyColor} colors={LIBERO_COLORS} />
+              <Picker label="Team Jersey Color"  value={teamJerseyColor}   onChange={setTeamJerseyColor}   colors={teamColors} />
+              <Picker label="Libero Jersey Color" value={liberoJerseyColor} onChange={setLiberoJerseyColor} colors={liberoColors} />
             </>
           );
         })()}

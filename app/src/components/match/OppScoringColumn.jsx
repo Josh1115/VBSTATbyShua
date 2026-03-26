@@ -9,6 +9,7 @@ const BUTTONS = [
   { reason: 'AE',  label: 'AE',  pointsUs: true  },
   { reason: 'BHE', label: 'BHE', pointsUs: true  },
   { reason: 'NET', label: 'NET', pointsUs: true  },
+  { reason: 'ROT', label: 'ROT', pointsUs: true  },
 ];
 
 export const OppScoringColumn = memo(function OppScoringColumn() {

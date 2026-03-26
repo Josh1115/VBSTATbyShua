@@ -4,7 +4,6 @@ import { db } from '../db/schema';
 import { useUiStore } from './uiStore';
 import { getIntStorage, STORAGE_KEYS } from '../utils/storage';
 
-const ACTION_HISTORY_LIMIT = 10;
 
 const emptyLineup = () =>
   Array.from({ length: 6 }, (_, i) => ({
@@ -76,6 +75,14 @@ function autoSwapLibero(s, newLineup) {
 
 // Common per-set reset fields shared between resetCurrentSet() and endSet().
 // Returns a fresh object each call so callers get their own {} and [] references.
+// Replace one element in an array by id without cloning every element.
+// Returns a new array with only the matching item replaced.
+function replaceOneContact(arr, id, patch) {
+  const idx = arr.findIndex((c) => c.id === id);
+  if (idx === -1) return arr;
+  return [...arr.slice(0, idx), { ...arr[idx], ...patch }, ...arr.slice(idx + 1)];
+}
+
 const makeSetResetState = () => ({
   ourScore:                    0,
   oppScore:                    0,
@@ -89,6 +96,7 @@ const makeSetResetState = () => ({
   committedContacts:           [],
   committedRallies:            [],
   actionHistory:               [],
+  lastSetContactId:            null,
   pendingHblk:                 null,
   lastFeedItem:                null,
   rallyPhase:                  'pre_serve',
@@ -116,6 +124,7 @@ const OPP_REASON = {
   AE:  { action: ACTION.ATTACK, result: RESULT.ERROR,               pointSide: SIDE.US,   feedLabel: '+1 Opp Atk Err'  },
   BHE: { action: ACTION.ERROR,  result: RESULT.BALL_HANDLING_ERROR, pointSide: SIDE.US,   feedLabel: '+1 Opp BHE'      },
   NET: { action: ACTION.ERROR,  result: RESULT.NET_TOUCH,           pointSide: SIDE.US,   feedLabel: '+1 Opp Net'      },
+  ROT: { action: ACTION.ERROR,  result: RESULT.ROTATION_ERROR,      pointSide: SIDE.US,   feedLabel: '+1 Opp ROT'      },
 };
 
 function getStatLabel(action, result, lastName) {
@@ -152,7 +161,7 @@ function setFeed(setFn, label) {
 
 const pushAction = (get, set, entry) => {
   const prev = get().actionHistory;
-  set({ actionHistory: [entry, ...prev].slice(0, ACTION_HISTORY_LIMIT) });
+  set({ actionHistory: [entry, ...prev] });
 };
 
 const INITIAL_STATE = {
@@ -193,6 +202,7 @@ const INITIAL_STATE = {
   rotationNum:           1,
 
   actionHistory:         [],   // array of up to 10 action descriptors, newest first
+  lastSetContactId:      null, // id of the most recent SET contact this set (O(1) assist lookup)
   pendingHblk:           null, // { playerId } | null — waiting for block assist partner
   lastFeedItem:          null, // { label: string, id: number }
   rallyPhase:            'pre_serve', // 'pre_serve' | 'in_rally'
@@ -526,7 +536,13 @@ export const useMatchStore = create((set, get) => ({
       timestamp:    Date.now(),
       ...contactData,
     };
-    const id = await db.contacts.add(contactFull);
+    let id;
+    try {
+      id = await db.contacts.add(contactFull);
+    } catch (e) {
+      useUiStore.getState().showToast('Failed to record contact. Check storage.', 'error');
+      return null;
+    }
 
     let newCommittedContacts = [...s.committedContacts, { ...contactFull, id }];
 
@@ -554,27 +570,26 @@ export const useMatchStore = create((set, get) => ({
         autoSetId = await db.contacts.add(autoSetContact);
         newCommittedContacts = [...newCommittedContacts, { ...autoSetContact, id: autoSetId }];
       } else if (contactData.result === RESULT.KILL) {
-        // No back row setter — fall back to back-assigning the last manual SET contact
-        const cc = s.committedContacts;
-        let lastSetContact = null;
-        for (let i = cc.length - 1; i >= 0; i--) {
-          if (cc[i].set_id === s.currentSetId && cc[i].action === ACTION.SET) { lastSetContact = cc[i]; break; }
-        }
-        if (lastSetContact) {
-          assistId = lastSetContact.id;
-          prevAssistResult = lastSetContact.result;
-          await db.contacts.update(lastSetContact.id, { result: RESULT.ASSIST });
-          newCommittedContacts = newCommittedContacts.map((c) =>
-            c.id === lastSetContact.id ? { ...c, result: RESULT.ASSIST } : c
-          );
+        // No back row setter — back-assign assist to last manual SET contact (O(1) lookup)
+        const lsid = s.lastSetContactId;
+        if (lsid != null) {
+          const lastSetContact = s.committedContacts.find((c) => c.id === lsid);
+          if (lastSetContact) {
+            assistId = lastSetContact.id;
+            prevAssistResult = lastSetContact.result;
+            await db.contacts.update(lastSetContact.id, { result: RESULT.ASSIST });
+            newCommittedContacts = replaceOneContact(newCommittedContacts, lastSetContact.id, { result: RESULT.ASSIST });
+          }
         }
       }
     }
 
     const prevHistory = get().actionHistory;
     set({
-      actionHistory:     [{ type: 'contact', contactId: id, assistId, prevAssistResult, autoSetId }, ...prevHistory].slice(0, ACTION_HISTORY_LIMIT),
+      actionHistory:     [{ type: 'contact', contactId: id, assistId, prevAssistResult, autoSetId }, ...prevHistory],
       committedContacts: newCommittedContacts,
+      // Track last SET contact id so assist back-assignment is O(1) instead of O(n)
+      ...(contactData.action === ACTION.SET ? { lastSetContactId: id } : {}),
       // Only transition to in_rally when the ball is live:
       //   - a successful serve (IN) puts the ball in play
       //   - a pass follows a live serve
@@ -587,7 +602,7 @@ export const useMatchStore = create((set, get) => ({
 
     const slot = s.lineup.find((p) => p.playerId === contactData.player_id);
     if (slot) {
-      const lastName = slot.playerName.split(' ').pop();
+      const lastName = slot.playerName?.split(' ').pop() ?? 'Player';
       setFeed(set, getStatLabel(contactData.action, contactData.result, lastName));
     }
 
@@ -648,16 +663,22 @@ export const useMatchStore = create((set, get) => ({
         // Partner confirmed — write both block assist contacts
         const now = Date.now();
         const contact1 = {
-          match_id: matchId, set_id: currentSetId,
-          player_id: pendingHblk.playerId,
-          action: ACTION.BLOCK, result: RESULT.BLOCK_ASSIST,
-          timestamp: now,
+          match_id:     matchId, set_id: currentSetId,
+          player_id:    pendingHblk.playerId,
+          action:       ACTION.BLOCK, result: RESULT.BLOCK_ASSIST,
+          rally_number: s.rallyCount,
+          rotation_num: s.rotationNum,
+          serve_side:   s.serveSide,
+          timestamp:    now,
         };
         const contact2 = {
-          match_id: matchId, set_id: currentSetId,
-          player_id: playerId,
-          action: ACTION.BLOCK, result: RESULT.BLOCK_ASSIST,
-          timestamp: now + 1,
+          match_id:     matchId, set_id: currentSetId,
+          player_id:    playerId,
+          action:       ACTION.BLOCK, result: RESULT.BLOCK_ASSIST,
+          rally_number: s.rallyCount,
+          rotation_num: s.rotationNum,
+          serve_side:   s.serveSide,
+          timestamp:    now + 1,
         };
         const id1 = await db.contacts.add(contact1);
         const id2 = await db.contacts.add(contact2);
@@ -669,7 +690,7 @@ export const useMatchStore = create((set, get) => ({
         const prevHistory = get().actionHistory;
         set({
           pendingHblk:   null,
-          actionHistory: [{ type: 'hblk_contact', contactId1: id1, contactId2: id2 }, ...prevHistory].slice(0, ACTION_HISTORY_LIMIT),
+          actionHistory: [{ type: 'hblk_contact', contactId1: id1, contactId2: id2 }, ...prevHistory],
           committedContacts: newCommittedContacts,
         });
 
@@ -689,9 +710,17 @@ export const useMatchStore = create((set, get) => ({
   substitutePlayer: async (outPlayerId, inPlayer, positionOverride) => {
     const s = get();
     if (s.subsUsed >= s.maxSubsPerSet) return false;
+    if (!inPlayer?.id) return false;
 
     const slotIdx = s.lineup.findIndex((sl) => sl.playerId === outPlayerId);
     if (slotIdx === -1) return false;
+
+    // Prevent placing a player who is already on the court in another slot
+    const alreadyOnCourt = s.lineup.some((sl) => sl.playerId === inPlayer.id);
+    if (alreadyOnCourt) return false;
+
+    // Prevent re-subbing a player pair that has already completed a return sub this set
+    if (s.exhaustedPlayerIds.includes(outPlayerId) || s.exhaustedPlayerIds.includes(inPlayer.id)) return false;
 
     const outPlayer             = s.lineup[slotIdx];
     const prevSubsUsed          = s.subsUsed;
@@ -818,6 +847,34 @@ export const useMatchStore = create((set, get) => ({
     });
   },
 
+  recordHomeRotError: async () => {
+    const s = get();
+    const currentRally = s.rallyCount;
+    get().addPoint(SIDE.THEM);
+    setFeed(set, 'ROT Violation');
+    const contactFull = {
+      match_id:         s.matchId,
+      set_id:           s.currentSetId,
+      player_id:        null,
+      rally_number:     currentRally,
+      rotation_num:     s.rotationNum,
+      serve_side:       s.serveSide,
+      action:           'error',
+      result:           'rotation_error',
+      opponent_contact: false,
+      timestamp:        Date.now(),
+    };
+    try {
+      const id = await db.contacts.add(contactFull);
+      set((cur) => ({
+        committedContacts: [...cur.committedContacts, { ...contactFull, id }],
+        actionHistory: [{ type: 'opp_contact', contactId: id }, ...cur.actionHistory],
+      }));
+    } catch (err) {
+      console.error('[VBStat] recordHomeRotError contact write failed:', err);
+    }
+  },
+
   addOppPoint: async (reason) => {
     const s = get();
     const { action, result, pointSide, feedLabel } = OPP_REASON[reason];
@@ -837,13 +894,12 @@ export const useMatchStore = create((set, get) => ({
     setFeed(set, feedLabel);
     try {
       const id = await db.contacts.add(contactFull);
-      const prevHistory = get().actionHistory;
-      set({
-        committedContacts: [...get().committedContacts, { ...contactFull, id }],
-        actionHistory: [{ type: 'opp_contact', contactId: id }, ...prevHistory].slice(0, ACTION_HISTORY_LIMIT),
-      });
+      set((cur) => ({
+        committedContacts: [...cur.committedContacts, { ...contactFull, id }],
+        actionHistory: [{ type: 'opp_contact', contactId: id }, ...cur.actionHistory],
+      }));
     } catch (err) {
-      console.error('addOppPoint contact write', err);
+      console.error('[VBStat] addOppPoint contact write failed:', err);
     }
   },
 
@@ -904,6 +960,7 @@ export const useMatchStore = create((set, get) => ({
       setNumber:     nextSetNum,
       ourSetsWon:    newSetsUs,
       oppSetsWon:    newSetsThem,
+      pendingSetWin: null,
     });
   },
 
@@ -914,9 +971,7 @@ export const useMatchStore = create((set, get) => ({
       return {
         pendingServeContact: null,
         serveReticles: [...s.serveReticles, { contactId, result: contact?.result, court_x, court_y, zone }],
-        committedContacts: s.committedContacts.map(c =>
-          c.id === contactId ? { ...c, court_x, court_y, zone } : c
-        ),
+        committedContacts: replaceOneContact(s.committedContacts, contactId, { court_x, court_y, zone }),
       };
     });
   },

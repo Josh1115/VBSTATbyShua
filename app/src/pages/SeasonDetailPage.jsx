@@ -34,7 +34,9 @@ export function SeasonDetailPage() {
     const season = await db.seasons.get(id);
     if (!season) return null;
     const team = await db.teams.get(season.team_id);
-    const rawMatches = await db.matches.where('season_id').equals(id).reverse().sortBy('date');
+    const now = Date.now();
+    const rawMatches = (await db.matches.where('season_id').equals(id).toArray())
+      .sort((a, b) => Math.abs(new Date(a.date) - now) - Math.abs(new Date(b.date) - now));
 
     // Join opponent names
     const oppIds = [...new Set(rawMatches.map((m) => m.opponent_id).filter(Boolean))];

@@ -14,6 +14,7 @@ const STAT_FIELDS = [
   { key: 'ae',  label: 'AE'  },
   { key: 'ast', label: 'AST' },
   { key: 'bhe', label: 'BHE' },
+  { key: 'fbe', label: 'FBE' },
   { key: 'bs',  label: 'BS'  },
   { key: 'ba',  label: 'BA'  },
   { key: 'be',  label: 'BE'  },
@@ -46,9 +47,10 @@ function buildContacts(matchId, setId, playerId, fields) {
   if (taInPlay > 0) contacts.push({ action: 'attack', result: 'in_play', count: taInPlay });
 
   // Set
-  const ast = n('ast'), bhe = n('bhe');
-  if (ast > 0) contacts.push({ action: 'set', result: 'assist',              count: ast });
-  if (bhe > 0) contacts.push({ action: 'set', result: 'ball_handling_error', count: bhe });
+  const ast = n('ast'), bhe = n('bhe'), fbe = n('fbe');
+  if (ast > 0) contacts.push({ action: 'set',               result: 'assist',              count: ast });
+  if (bhe > 0) contacts.push({ action: 'set',               result: 'ball_handling_error', count: bhe });
+  if (fbe > 0) contacts.push({ action: 'freeball_receive',  result: 'free_ball_error',     count: fbe });
 
   // Block
   const bs = n('bs'), ba = n('ba'), be = n('be');

@@ -35,7 +35,7 @@ export function useWakeLock(enabled) {
     return () => {
       releasedRef.current = true;
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      lockRef.current?.release().catch(() => {});
+      lockRef.current?.release().catch((err) => { console.warn('[VBStat] wake lock release:', err?.message ?? err); });
       lockRef.current = null;
     };
   }, [enabled]);

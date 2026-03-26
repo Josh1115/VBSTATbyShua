@@ -5,11 +5,13 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { MATCH_STATUS } from '../constants';
 import { fmtDate } from '../stats/formatters';
+import { computePlayerStats } from '../stats/engine';
 import { Button } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { NetDivider } from '../components/ui/NetDivider';
 import { SwipeableMatchCard } from '../components/ui/SwipeableMatchCard';
+import { VBPlayerScene } from '../components/ui/VBPlayerScene';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -159,6 +161,41 @@ export function HomePage() {
     };
   }, [defaultTeamId, defaultSeasonId]);
 
+  const seasonLeaders = useLiveQuery(async () => {
+    if (!defaultTeamId || !defaultSeasonId) return null;
+    const matches = await db.matches
+      .where('season_id').equals(defaultSeasonId)
+      .filter(m => m.status === MATCH_STATUS.COMPLETE && m.match_type !== 'exhibition')
+      .toArray();
+    if (!matches.length) return null;
+    const matchIds = matches.map(m => m.id);
+    const [contacts, players] = await Promise.all([
+      db.contacts.where('match_id').anyOf(matchIds).toArray(),
+      db.players.where('team_id').equals(defaultTeamId).toArray(),
+    ]);
+    const nameMap = Object.fromEntries(players.map(p => [p.id, p.name ?? `#${p.jersey_number}`]));
+    const stats = computePlayerStats(contacts);
+    const findLeader = (getValue) => {
+      let best = null;
+      for (const [id, ps] of Object.entries(stats)) {
+        const val = getValue(ps);
+        if (val > 0 && (!best || val > best.val)) {
+          best = { name: nameMap[id] ?? '—', val };
+        }
+      }
+      return best;
+    };
+    return {
+      kills:   findLeader(ps => ps.k   ?? 0),
+      aces:    findLeader(ps => ps.ace  ?? 0),
+      blocks:  findLeader(ps => (ps.bs ?? 0) + (ps.ba ?? 0)),
+      digs:    findLeader(ps => ps.dig  ?? 0),
+      assists: findLeader(ps => ps.ast  ?? 0),
+      rec:     findLeader(ps => ps.pa  ?? 0),
+      apr:     findLeader(ps => (ps.pa ?? 0) >= 10 ? (ps.apr ?? 0) : 0),
+    };
+  }, [defaultTeamId, defaultSeasonId]);
+
   // ── Multi-ball system ──────────────────────────────────────────────────────
   const [balls,       setBalls]       = useState([]); // [{ id, type, left }]
   const [netRippling, setNetRippling] = useState(false);
@@ -266,7 +303,7 @@ export function HomePage() {
   return (
     <div>
       {/* ── Header ── */}
-      <header className="sticky top-0 z-20 bg-bg border-b border-slate-800 px-4 py-3 text-center relative">
+      <header className="sticky top-0 z-20 bg-bg border-b border-slate-800 px-4 pt-3 pb-6 text-center relative">
 
         {/* Volleyball net watermark (mesh sways via .net-wave CSS) */}
         <svg
@@ -303,6 +340,8 @@ export function HomePage() {
           <rect x="553" y="40" width="3" height="4"  fill="#ef4444" />
           <rect x="553" y="48" width="3" height="4"  fill="#ef4444" />
         </svg>
+
+        <VBPlayerScene />
 
         <div className="absolute inset-0 crt-scanlines pointer-events-none overflow-hidden" aria-hidden="true" />
 
@@ -473,6 +512,42 @@ export function HomePage() {
           </div>
         )}
 
+        {/* ── Season Leaders ── */}
+        {(seasonRecord || seasonLeaders) && (() => {
+          const LEADERS = [
+            { label: 'K',   key: 'kills'   },
+            { label: 'ACE', key: 'aces'    },
+            { label: 'BLK', key: 'blocks'  },
+            { label: 'DIG', key: 'digs'    },
+            { label: 'AST', key: 'assists' },
+            { label: 'REC', key: 'rec'     },
+            { label: 'APR', key: 'apr',    fmt: v => Number(v).toFixed(2) },
+          ];
+          return (
+            <div className="animate-slide-up-fade" style={{ animationDelay: '250ms' }}>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2 px-0.5">Season Leaders</p>
+              <div className="grid grid-cols-7 gap-2">
+                {LEADERS.map(({ label, key, fmt }) => {
+                  const leader = seasonLeaders?.[key];
+                  return (
+                    <div key={key} className="bg-surface rounded-xl p-2 text-center flex flex-col items-center gap-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">{label}</span>
+                      {leader ? (
+                        <>
+                          <span className="text-xl font-black text-primary tabular-nums leading-none">{fmt ? fmt(leader.val) : leader.val}</span>
+                          <span className="text-[10px] font-semibold text-slate-300 leading-tight text-center break-words w-full">{leader.name}</span>
+                        </>
+                      ) : (
+                        <span className="text-xl font-black text-slate-600 leading-none">—</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── Tools ── */}
         <button
           onClick={() => navigate('/tools')}
@@ -576,7 +651,12 @@ export function HomePage() {
                 className="w-full bg-surface p-4 text-left flex items-center justify-between hover:bg-slate-700 rounded-xl transition-colors"
               >
                   <div>
-                    <div className="font-semibold">{match.opponent_name ?? 'vs. Unknown'}</div>
+                    <div className="font-semibold">
+                      {match.opponent_name ?? 'vs. Unknown'}
+                      {match.opponent_maxpreps_rank != null && (
+                        <span className="text-slate-400 font-normal"> #{match.opponent_maxpreps_rank}</span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       {match.location && (
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${

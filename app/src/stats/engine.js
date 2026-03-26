@@ -1,34 +1,20 @@
 import {
   getContactsForMatch, getRalliesForMatch, getSetsPlayedCount,
   getContactsForMatches, getMatchesForSeason, getRalliesForMatches,
-  getPlayerPositionsForMatches, getBatchSetsPlayedCount,
+  getPlayerPositionsForMatches, getBatchSetsPlayedCount, getOppScoredForMatches,
 } from './queries';
+import { POSITION_MULTIPLIERS } from '../constants';
 
 // ── Internal helpers ────────────────────────────────────────────────────────
 
 const div = (n, d) => (d > 0 ? n / d : null);
 
-// Position multipliers for VER — adjust raw efficiency to account for positional opportunity.
-// Libero (1.20) and DS (1.15) face harder serve-receive and dig situations with fewer
-// high-value scoring actions, so their raw VER underrepresents contribution.
-// MB (1.05) is slightly boosted because middle opportunities (blocks, quick attacks) are
-// fewer per set than OH/OPP. S (0.90) reflects that setters accumulate assists (not kills)
-// which are weighted lower in the formula. OH/OPP (1.00) are the baseline.
-// These are design choices — adjust if your program's positional balance differs.
-const POSITION_MULTIPLIERS = {
-  OH:  1.00,
-  OPP: 1.00,
-  RS:  1.00,
-  MB:  1.05,
-  S:   0.90,
-  L:   1.20,
-  DS:  1.15,
-};
+// POSITION_MULTIPLIERS imported from constants/index.js
 
 function mkAccum() {
   return {
     // serve — totals
-    sa: 0, ace: 0, se: 0, se_ob: 0, se_net: 0,
+    sa: 0, ace: 0, se: 0, se_ob: 0, se_net: 0, se_foot: 0,
     // serve — by type
     f_sa: 0, f_ace: 0, f_se: 0,   // float
     t_sa: 0, t_ace: 0, t_se: 0,   // topspin
@@ -43,7 +29,7 @@ function mkAccum() {
     // dig
     dig: 0, fb_dig: 0, de: 0,
     // freeball
-    fbr: 0, fbs: 0,
+    fbr: 0, fbs: 0, fbe: 0,
   };
 }
 
@@ -55,8 +41,9 @@ function accumContact(p, { action, result, serve_type, error_type, count = 1 }) 
     if (result === 'ace')   p.ace += n;
     if (result === 'error') {
       p.se += n;
-      if (error_type === 'ob')  p.se_ob += n;
-      if (error_type === 'net') p.se_net += n;
+      if (error_type === 'ob')   p.se_ob   += n;
+      if (error_type === 'net')  p.se_net  += n;
+      if (error_type === 'foot') p.se_foot += n;
     }
     if (serve_type === 'float') {
       p.f_sa += n;
@@ -89,7 +76,8 @@ function accumContact(p, { action, result, serve_type, error_type, count = 1 }) 
     if (result === 'freeball')                          p.fb_dig += n;
     if (result === 'error')                             p.de     += n;
   } else if (action === 'freeball_receive') {
-    p.fbr += n;
+    if (result === 'free_ball_error') p.fbe += n;
+    else                              p.fbr += n;
   } else if (action === 'freeball_send') {
     p.fbs += n;
   }
@@ -100,7 +88,7 @@ function deriveStats(p, sp, posLabel = null) {
   const posMult = POSITION_MULTIPLIERS[posLabel] ?? 1.0;
   return {
     // Serving — totals
-    sa: p.sa, ace: p.ace, se: p.se, se_ob: p.se_ob, se_net: p.se_net,
+    sa: p.sa, ace: p.ace, se: p.se, se_ob: p.se_ob, se_net: p.se_net, se_foot: p.se_foot,
     ace_pct:  div(p.ace,    p.sa),
     se_pct:   div(p.se,     p.sa),
     si_pct:   div(p.sa - p.se, p.sa),   // 1st-serve-in %
@@ -109,10 +97,12 @@ function deriveStats(p, sp, posLabel = null) {
     // Serving — float
     f_sa: p.f_sa, f_ace: p.f_ace, f_se: p.f_se,
     f_ace_pct: div(p.f_ace, p.f_sa),
+    f_se_pct:  div(p.f_se,  p.f_sa),
     f_si_pct:  div(p.f_sa - p.f_se, p.f_sa),
     // Serving — topspin
     t_sa: p.t_sa, t_ace: p.t_ace, t_se: p.t_se,
     t_ace_pct: div(p.t_ace, p.t_sa),
+    t_se_pct:  div(p.t_se,  p.t_sa),
     t_si_pct:  div(p.t_sa - p.t_se, p.t_sa),
 
     // Passing
@@ -139,10 +129,10 @@ function deriveStats(p, sp, posLabel = null) {
     dips: div(p.dig, sp),
 
     // Freeball
-    fbr: p.fbr, fbs: p.fbs,
+    fbr: p.fbr, fbs: p.fbs, fbe: p.fbe,
 
     // Volleyball Efficiency Rating (position-adjusted)
-    // VER = posMult × (1/sp) × [4K + 4ACE + 3.5BS + 1.75BA + 1.5AST + 1DIG − 2.5AE − 2.5SE − 1.5BHE]
+    // VER = posMult × (1/sp) × [4K + 4ACE + 3.5BS + 1.75BA + 1.5AST + 1DIG − 2.5AE − 2.5SE − 1.5BHE − 1.5FBE]
     ver: sp > 0
       ? posMult * (1 / sp) * (
           4.0  * p.k   +
@@ -153,7 +143,8 @@ function deriveStats(p, sp, posLabel = null) {
           1.0  * p.dig -
           2.5  * p.ae  -
           2.5  * p.se  -
-          1.5  * p.bhe
+          1.5  * p.bhe -
+          1.5  * p.fbe
         )
       : null,
     pos_label: posLabel ?? null,
@@ -301,8 +292,15 @@ export function computeRotationContactStats(contacts) {
  *
  * Returns { byRotation: { 1..6: { is: {...}, oos: {...} } }, total: same }
  */
-export function computeISvsOOS(contacts, rallies) {
-  const rallyMap = new Map(rallies.map((r) => [`${r.set_id}_${r.rally_number}`, r]));
+
+// Build a rally lookup Map keyed by "set_id_rally_number".
+// Shared by computeISvsOOS, computeTransitionAttack, computeFreeDigWin, computeFreeballOutcomes
+// so the Map is only built once per stats computation rather than 4 separate times.
+export function buildRallyMap(rallies) {
+  return new Map(rallies.map((r) => [`${r.set_id}_${r.rally_number}`, r]));
+}
+
+export function computeISvsOOS(contacts, rallies, rallyMap = buildRallyMap(rallies)) {
   const mkSlot = () => ({ ta: 0, k: 0, ae: 0, win: 0 });
   const byRotation = {};
   for (let r = 1; r <= 6; r++) byRotation[r] = { is: mkSlot(), oos: mkSlot() };
@@ -400,8 +398,7 @@ export function computeISvsOOS(contacts, rallies) {
  *   transition: { total: ..., byRotation: ... }
  * }
  */
-export function computeTransitionAttack(contacts, rallies) {
-  const rallyMap = new Map(rallies.map((r) => [`${r.set_id}_${r.rally_number}`, r]));
+export function computeTransitionAttack(contacts, rallies, rallyMap = buildRallyMap(rallies)) {
 
   // Group our contacts by rally key, sorted by timestamp
   const contactsByRally = new Map();
@@ -496,7 +493,7 @@ export function computeTransitionAttack(contacts, rallies) {
  *
  * Returns { byRotation: { 1..6: { max_run, avg_run, runs_3plus, runs_5plus, total_runs } }, total: same }
  */
-function computeRunsByRotation(rallies) {
+export function computeRunsByRotation(rallies) {
   const sorted = [...rallies].sort((a, b) =>
     a.set_id !== b.set_id ? a.set_id - b.set_id : a.rally_number - b.rally_number
   );
@@ -540,8 +537,7 @@ function computeRunsByRotation(rallies) {
  * FREE dig = action 'dig', result 'freeball'.
  * Returns { byRotation: { 1..6: { fb_dig, fb_won } }, total: same }
  */
-export function computeFreeDigWin(contacts, rallies) {
-  const rallyMap = new Map(rallies.map((r) => [`${r.set_id}_${r.rally_number}`, r]));
+export function computeFreeDigWin(contacts, rallies, rallyMap = buildRallyMap(rallies)) {
   const mkSlot = () => ({ fb_dig: 0, fb_won: 0 });
   const byRotation = {};
   for (let r = 1; r <= 6; r++) byRotation[r] = mkSlot();
@@ -567,8 +563,7 @@ export function computeFreeDigWin(contacts, rallies) {
  * FBO% = rallies where our freeball_receive → we scored / total freeball_receive contacts
  * FBD% = rallies where we sent freeball → we won the point / total freeball_send contacts
  */
-export function computeFreeballOutcomes(contacts, rallies) {
-  const rallyMap = new Map(rallies.map(r => [`${r.set_id}_${r.rally_number}`, r]));
+export function computeFreeballOutcomes(contacts, rallies, rallyMap = buildRallyMap(rallies)) {
   let fbr = 0, fbrWin = 0, fbs = 0, fbsWin = 0;
   for (const c of contacts) {
     if (c.opponent_contact) continue;
@@ -599,7 +594,7 @@ export function computeFreeballOutcomes(contacts, rallies) {
  */
 export function computePointQuality(contacts) {
   const earned = { ace: 0, k: 0, sblk: 0, hblk: 0 };
-  const given  = { se: 0, ae: 0, p0: 0, lift: 0, dbl: 0, net: 0 };
+  const given  = { se: 0, ae: 0, p0: 0, lift: 0, dbl: 0, net: 0, rot: 0 };
   const free   = { se: 0, ae: 0, bhe: 0, net: 0 };
 
   for (const c of contacts) {
@@ -619,12 +614,13 @@ export function computePointQuality(contacts) {
       else if (c.action === 'pass'   && c.result === '0')      given.p0++;
       else if (c.action === 'error'  && c.result === 'lift')   given.lift++;
       else if (c.action === 'error'  && c.result === 'double') given.dbl++;
-      else if (c.action === 'error'  && c.result === 'net')    given.net++;
+      else if (c.action === 'error'  && c.result === 'net')              given.net++;
+      else if (c.action === 'error'  && c.result === 'rotation_error')  given.rot++;
     }
   }
 
   const earnedTotal = earned.ace + earned.k + earned.sblk + earned.hblk;
-  const givenTotal  = given.se + given.ae + given.p0 + given.lift + given.dbl + given.net;
+  const givenTotal  = given.se + given.ae + given.p0 + given.lift + given.dbl + given.net + given.rot;
   const freeTotal   = free.se + free.ae + free.bhe + free.net;
   const scored      = earnedTotal + freeTotal;
 
@@ -651,16 +647,17 @@ export async function computeMatchStats(matchId) {
     getSetsPlayedCount(matchId),
     getPlayerPositionsForMatches([matchId]),
   ]);
+  const rallyMap = buildRallyMap(rallies);
   return {
     players:          computePlayerStats(contacts, setsPlayed, playerPositions),
     team:             computeTeamStats(contacts, setsPlayed),
     opp:              computeOppDisplayStats(contacts),
     serveZones:       computeServeZoneStats(contacts),
     rotation:         computeRotationStats(rallies),
-    freeball:         computeFreeballOutcomes(contacts, rallies),
-    isOos:            computeISvsOOS(contacts, rallies),
-    transitionAttack: computeTransitionAttack(contacts, rallies),
-    freeDigWin:       computeFreeDigWin(contacts, rallies),
+    freeball:         computeFreeballOutcomes(contacts, rallies, rallyMap),
+    isOos:            computeISvsOOS(contacts, rallies, rallyMap),
+    transitionAttack: computeTransitionAttack(contacts, rallies, rallyMap),
+    freeDigWin:       computeFreeDigWin(contacts, rallies, rallyMap),
     runs:             computeRunsByRotation(rallies),
     pointQuality:     computePointQuality(contacts),
     setsPlayed,
@@ -688,28 +685,31 @@ export async function computeSeasonStats(seasonId, filters = {}) {
   if (!matches.length) return { empty: true, totalMatchCount };
 
   const matchIds = matches.map(m => m.id);
-  const [contacts, rallies, setsPerMatch, playerPositions] = await Promise.all([
+  const [contacts, rallies, setsPerMatch, playerPositions, oppScored] = await Promise.all([
     getContactsForMatches(matchIds),
     getRalliesForMatches(matchIds),
     getBatchSetsPlayedCount(matchIds),
     getPlayerPositionsForMatches(matchIds),
+    getOppScoredForMatches(matchIds),
   ]);
   const setsPlayed = Object.values(setsPerMatch).reduce((a, b) => a + b, 0);
 
+  const rallyMap = buildRallyMap(rallies);
   return {
     players:          computePlayerStats(contacts, setsPlayed, playerPositions),
     team:             computeTeamStats(contacts, setsPlayed),
     rotation:         computeRotationStats(rallies),
-    freeball:         computeFreeballOutcomes(contacts, rallies),
-    isOos:            computeISvsOOS(contacts, rallies),
-    transitionAttack: computeTransitionAttack(contacts, rallies),
-    freeDigWin:       computeFreeDigWin(contacts, rallies),
+    freeball:         computeFreeballOutcomes(contacts, rallies, rallyMap),
+    isOos:            computeISvsOOS(contacts, rallies, rallyMap),
+    transitionAttack: computeTransitionAttack(contacts, rallies, rallyMap),
+    freeDigWin:       computeFreeDigWin(contacts, rallies, rallyMap),
     runs:             computeRunsByRotation(rallies),
     pointQuality:     computePointQuality(contacts),
     trends:           computePlayerTrends(matches, contacts, setsPerMatch, playerPositions),
     setsPlayed,
     matchCount:       matchIds.length,
     totalMatchCount,
+    oppScored,
     contacts,
   };
 }
@@ -733,23 +733,25 @@ export function computePlayerTrends(matches, contacts, setsPerMatch, playerPosit
     (byMatch[c.match_id] ??= []).push(c);
   }
 
-  const byPlayer = {};
-  for (let i = 0; i < sorted.length; i++) {
-    const match = sorted[i];
+  // Pass 1: compute per-match stats and collect all player IDs up front.
+  // Avoids the O(n²) new Array(i).fill(null) pattern for late-discovered players.
+  const allPlayerIds = new Set();
+  const statsByMatch = sorted.map((match) => {
     const mc = byMatch[match.id] ?? [];
     const sp = setsPerMatch[match.id] ?? 1;
-    const matchStats = computePlayerStats(mc, sp, playerPositions);
+    const ms = computePlayerStats(mc, sp, playerPositions);
+    for (const pid of Object.keys(ms)) allPlayerIds.add(pid);
+    return ms;
+  });
 
-    // Existing players: push stats or null if absent this match
-    for (const pid of Object.keys(byPlayer)) {
-      byPlayer[pid].push(matchStats[pid] ? { matchId: match.id, ...matchStats[pid] } : null);
-    }
-    // New players first seen this match: pad prior slots with null then push
-    for (const [pid, row] of Object.entries(matchStats)) {
-      if (!byPlayer[pid]) {
-        byPlayer[pid] = new Array(i).fill(null);
-        byPlayer[pid].push({ matchId: match.id, ...row });
-      }
+  // Pass 2: build aligned arrays — one slot per match, null if player absent.
+  const byPlayer = {};
+  for (const pid of allPlayerIds) byPlayer[pid] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const matchId = sorted[i].id;
+    const ms = statsByMatch[i];
+    for (const pid of allPlayerIds) {
+      byPlayer[pid].push(ms[pid] ? { matchId, ...ms[pid] } : null);
     }
   }
 

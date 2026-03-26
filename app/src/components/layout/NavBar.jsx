@@ -51,7 +51,6 @@ export const NavBar = memo(function NavBar() {
                   className={`relative w-14 h-14 -mt-4 rounded-full bg-primary text-white text-2xl flex items-center justify-center shadow-lg active:scale-95 group${hasActiveMatch === false ? ' fab-glow' : ''}`}
                   aria-label="New Match"
                 >
-                  <span className="absolute -top-2 -right-0.5 text-[11px] pointer-events-none leading-none" style={{ opacity: 0.75 }}>🏐</span>
                   <span className="inline-block transition-transform duration-200 group-active:rotate-45">+</span>
                 </button>
               </div>

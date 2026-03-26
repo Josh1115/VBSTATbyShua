@@ -24,7 +24,7 @@ function useHoldButton(onFire) {
 }
 
 
-export const ActionBar = memo(function ActionBar({ onSubOpen, onMenuOpen, onStatsOpen, onSummaryOpen, liberoPlayer, onLiberoIn, alertCount = 0 }) {
+export const ActionBar = memo(function ActionBar({ onSubOpen, onMenuOpen, onStatsOpen, onSummaryOpen, liberoPlayer, onLiberoIn, onRotErrOpen, alertCount = 0 }) {
   const navigate       = useNavigate();
   const rotateForward  = useMatchStore((s) => s.rotateForward);
   const rotateBackward = useMatchStore((s) => s.rotateBackward);
@@ -141,9 +141,17 @@ export const ActionBar = memo(function ActionBar({ onSubOpen, onMenuOpen, onStat
               : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
             : 'bg-slate-800 text-slate-700'}`}
         >
-          <span className="text-[1.53vmin] leading-none">{liberoOnCourt ? 'LIB IN' : 'LIB OUT'}</span>
+          <span className="text-[1.53vmin] leading-none">{liberoOnCourt ? 'LIB ON' : 'LIB OFF'}</span>
         </button>
       )}
+
+      {/* ROT ERR — home team rotation violation */}
+      <button
+        onPointerDown={(e) => { e.preventDefault(); onRotErrOpen(); }}
+        className={`${btnBase} bg-slate-800 text-rose-400 hover:bg-rose-950/60`}
+      >
+        <span className="text-[1.53vmin] leading-none">ROT ERR</span>
+      </button>
 
       {/* Stats */}
       <div className="relative flex-1 h-full">

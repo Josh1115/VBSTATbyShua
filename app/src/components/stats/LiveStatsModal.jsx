@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useShallow } from 'zustand/react/shallow';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useMatchStore } from '../../store/matchStore';
@@ -24,6 +25,7 @@ const SERVING_COLS = {
     { key: 'se_ob',    label: 'SOB',   fmt: fmtCount },
     { key: 'se_net',   label: 'SNET',  fmt: fmtCount },
     { key: 'ace_pct',  label: 'ACE%',  fmt: fmtPct },
+    { key: 'se_pct',   label: 'SE%',   fmt: fmtPct },
     { key: 'si_pct',   label: 'S%',    fmt: fmtPct },
     { key: 'sob_pct',  label: 'SOB%',  fmt: fmtPct },
     { key: 'snet_pct', label: 'SNET%', fmt: fmtPct },
@@ -34,6 +36,7 @@ const SERVING_COLS = {
     { key: 'f_ace',     label: 'ACE',  fmt: fmtCount },
     { key: 'f_se',      label: 'SE',   fmt: fmtCount },
     { key: 'f_ace_pct', label: 'ACE%', fmt: fmtPct },
+    { key: 'f_se_pct',  label: 'SE%',  fmt: fmtPct },
     { key: 'f_si_pct',  label: 'S%',   fmt: fmtPct },
   ],
   TOP: [
@@ -42,6 +45,7 @@ const SERVING_COLS = {
     { key: 't_ace',     label: 'ACE',  fmt: fmtCount },
     { key: 't_se',      label: 'SE',   fmt: fmtCount },
     { key: 't_ace_pct', label: 'ACE%', fmt: fmtPct },
+    { key: 't_se_pct',  label: 'SE%',  fmt: fmtPct },
     { key: 't_si_pct',  label: 'S%',   fmt: fmtPct },
   ],
 };
@@ -84,9 +88,13 @@ const COLUMNS = {
     { key: 'ver',  label: 'VER',  fmt: fmtVER   },
     { key: 'k',    label: 'K',    fmt: fmtCount },
     { key: 'ace',  label: 'ACE',  fmt: fmtCount },
-    { key: 'dig',  label: 'DIG',  fmt: fmtCount },
-    { key: 'ast',  label: 'AST',  fmt: fmtCount },
     { key: 'bs',   label: 'BS',   fmt: fmtCount },
+    { key: 'ba',   label: 'BA',   fmt: fmtCount },
+    { key: 'ast',  label: 'AST',  fmt: fmtCount },
+    { key: 'dig',  label: 'DIG',  fmt: fmtCount },
+    { key: 'ae',   label: 'AE',   fmt: fmtCount },
+    { key: 'se',   label: 'SE',   fmt: fmtCount },
+    { key: 'bhe',  label: 'BHE',  fmt: fmtCount },
   ],
 };
 
@@ -1070,6 +1078,31 @@ export const LiveStatsModal = memo(function LiveStatsModal({ open, onClose, team
     return src.filter(c => c.action === 'serve' && c.zone != null);
   }, [scope, committedContacts, currentSetId, allMatchContacts]);
 
+  const scoreTimelineCharts = useMemo(() => {
+    const rallies = allMatchRallies ?? [];
+    const sets    = allMatchSets    ?? [];
+    if (!rallies.length || !sets.length) return [];
+    return [...sets]
+      .filter(s => s.status !== 'scheduled')
+      .sort((a, b) => a.set_number - b.set_number)
+      .map(set => {
+        const setRallies = rallies
+          .filter(r => r.set_id === set.id)
+          .sort((a, b) => a.rally_number - b.rally_number);
+        if (!setRallies.length) return null;
+        const pts = [{ x: 0, us: 0, opp: 0 }];
+        let us = 0, opp = 0;
+        for (const r of setRallies) {
+          if (r.point_winner === 'us') us++;
+          else opp++;
+          pts.push({ x: pts.length, us, opp });
+        }
+        const maxScore = Math.max(...pts.map(d => Math.max(d.us, d.opp)), 1);
+        return { set, pts, maxScore };
+      })
+      .filter(Boolean);
+  }, [allMatchRallies, allMatchSets]);
+
   // All hooks must be called before any early return
   const rows = useMemo(() =>
     lineup
@@ -1252,7 +1285,44 @@ export const LiveStatsModal = memo(function LiveStatsModal({ open, onClose, team
             {/* Detail content */}
             <div className="flex-1 overflow-y-auto">
               {activeTab === 'POINTS'
-                ? <div className="p-4"><PointQualityPanel pq={pointQuality} /></div>
+                ? <div className="p-4 space-y-6">
+                    <PointQualityPanel pq={pointQuality} oppScored={oppScore} />
+                    {scoreTimelineCharts.length > 0 && (
+                      <div className="space-y-4">
+                        <p className="text-xs text-slate-400 font-medium uppercase tracking-wider">Score Timeline</p>
+                        <div className="flex gap-4">
+                          <span className="flex items-center gap-1 text-xs text-slate-400">
+                            <span className="inline-block w-4 h-0.5 bg-orange-400 rounded" />
+                            {teamName || 'Us'}
+                          </span>
+                          <span className="flex items-center gap-1 text-xs text-slate-400">
+                            <span className="inline-block w-4 h-0.5 bg-slate-400 rounded" />
+                            {opponentName || 'Opp'}
+                          </span>
+                        </div>
+                        {scoreTimelineCharts.map(({ set, pts, maxScore }) => (
+                          <div key={set.id}>
+                            <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Set {set.set_number}</p>
+                            <ResponsiveContainer width="100%" height={130}>
+                              <LineChart data={pts} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                <XAxis dataKey="x" hide />
+                                <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} domain={[0, 25]} ticks={[5, 10, 15, 20, 25]} interval={0} allowDecimals={false} />
+                                <Tooltip
+                                  contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
+                                  labelStyle={{ color: '#cbd5e1' }}
+                                  formatter={(val, name) => [val, name === 'us' ? (teamName || 'Us') : (opponentName || 'Opp')]}
+                                  labelFormatter={() => ''}
+                                />
+                                <Line type="monotone" dataKey="us"  stroke="#f97316" strokeWidth={2} dot={false} name="us" />
+                                <Line type="monotone" dataKey="opp" stroke="#94a3b8" strokeWidth={2} dot={false} name="opp" />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 : activeTab === 'RECORDS'
                 ? <RecordsProgressPanel
                     records={records}

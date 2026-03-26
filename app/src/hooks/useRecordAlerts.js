@@ -7,6 +7,10 @@ import { TRACKABLE_STATS } from '../constants';
  */
 export function computeMilestone(current, record, statType) {
   if (current == null || record == null || isNaN(current) || isNaN(record) || record <= 0) return null;
+  if (statType !== 'count' && statType !== 'rate') {
+    console.warn('[VBStat] computeMilestone: unknown statType:', statType);
+    return null;
+  }
 
   if (current > record) return 'beat';
   if (current === record) return 'tie';

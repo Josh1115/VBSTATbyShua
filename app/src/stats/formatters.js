@@ -55,5 +55,5 @@ export function fmtPlayerName(name, nickname, format) {
 // Pass average rating (null when no passes)
 export function calcAPR(passes) {
   if (!passes.length) return null;
-  return (passes.reduce((s, v) => s + v, 0) / passes.length).toFixed(2);
+  return passes.reduce((s, v) => s + v, 0) / passes.length;
 }

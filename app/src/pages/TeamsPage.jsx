@@ -69,6 +69,48 @@ function OrgFormModal({ onClose, org }) {
   );
 }
 
+const JERSEY_COLORS = [
+  { id: 'black',  label: 'Black',  bg: '#111827', border: '#374151' },
+  { id: 'white',  label: 'White',  bg: '#f8fafc', border: '#94a3b8' },
+  { id: 'gray',   label: 'Gray',   bg: '#94a3b8', border: '#64748b' },
+  { id: 'red',    label: 'Red',    bg: '#dc2626', border: '#ef4444' },
+  { id: 'orange', label: 'Orange', bg: '#ea580c', border: '#f97316' },
+  { id: 'yellow', label: 'Yellow', bg: '#ca8a04', border: '#eab308' },
+  { id: 'green',  label: 'Green',  bg: '#16a34a', border: '#22c55e' },
+  { id: 'blue',   label: 'Blue',   bg: '#1d4ed8', border: '#3b82f6' },
+  { id: 'purple', label: 'Purple', bg: '#7c3aed', border: '#a855f7' },
+  { id: 'pink',   label: 'Pink',   bg: '#db2777', border: '#ec4899' },
+];
+
+// value = string[] of selected color ids; onChange(id) toggles that id in/out
+function JerseyColorPicker({ label, value, onChange, colors }) {
+  return (
+    <div>
+      <label className="block text-sm text-slate-400 mb-2">{label}</label>
+      <div className="flex flex-wrap gap-2">
+        {colors.map((c) => {
+          const selected = value.includes(c.id);
+          return (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onChange(c.id)}
+              className="flex flex-col items-center gap-1 py-2 px-3 rounded-lg border transition-colors"
+              style={{
+                borderColor: selected ? 'var(--color-primary)' : c.border,
+                boxShadow:   selected ? '0 0 0 2px var(--color-primary)' : 'none',
+              }}
+            >
+              <span className="w-6 h-6 rounded-full block" style={{ background: c.bg, border: `1px solid ${c.border}` }} />
+              <span className="text-[11px] text-slate-400 leading-none">{c.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function TeamFormModal({ onClose, orgId, team }) {
   const [name, setName] = useState(team?.name ?? '');
   const [abbreviation, setAbbreviation] = useState(team?.abbreviation ?? '');
@@ -76,6 +118,11 @@ function TeamFormModal({ onClose, orgId, team }) {
   const [gender, setGender] = useState(team?.gender ?? 'F');
   const [state, setState] = useState(team?.state ?? '');
   const [schoolYear, setSchoolYear] = useState(team?.school_year ?? '');
+  const toArr = (v) => Array.isArray(v) ? v : (v ? [v] : []);
+  const [teamJerseyColors,   setTeamJerseyColors]   = useState(() => toArr(team?.team_jersey_color));
+  const [liberoJerseyColors, setLiberoJerseyColors] = useState(() => toArr(team?.libero_jersey_color));
+  const toggleTeamColor   = (id) => setTeamJerseyColors(  (prev) => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleLiberoColor = (id) => setLiberoJerseyColors((prev) => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const showToast = useUiStore(selectShowToast);
 
   const save = async () => {
@@ -88,6 +135,8 @@ function TeamFormModal({ onClose, orgId, team }) {
         gender,
         state: state.trim() || null,
         school_year: schoolYear.trim() || null,
+        team_jersey_color:   teamJerseyColors,
+        libero_jersey_color: liberoJerseyColors,
       };
       if (team) {
         await db.teams.update(team.id, fields);
@@ -183,6 +232,19 @@ function TeamFormModal({ onClose, orgId, team }) {
             />
           </div>
         </div>
+
+        <JerseyColorPicker
+          label="Team Jersey Colors"
+          value={teamJerseyColors}
+          onChange={toggleTeamColor}
+          colors={JERSEY_COLORS}
+        />
+        <JerseyColorPicker
+          label="Libero Jersey Colors"
+          value={liberoJerseyColors}
+          onChange={toggleLiberoColor}
+          colors={JERSEY_COLORS}
+        />
 
       </div>
     </Modal>

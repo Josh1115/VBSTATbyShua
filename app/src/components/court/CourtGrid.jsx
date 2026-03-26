@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 import { useMatchStore } from '../../store/matchStore';
 import { useShallow } from 'zustand/react/shallow';
 import { ACTION, RESULT } from '../../constants';
+import { computePlayerStats } from '../../stats/engine';
 import { PlayerTile } from './PlayerTile';
 
 // Render order maps the 2×3 visual grid to lineup indices.
@@ -289,7 +290,7 @@ function PerfectPassBadge({ x, y }) {
   );
 }
 
-export const CourtGrid = memo(function CourtGrid() {
+export const CourtGrid = memo(function CourtGrid({ aceZoneHints = {} }) {
   const {
     lineup, committedContacts, currentSetId, rallyPhase, serveSide,
     rotationNum, liberoId, serveReceiveFormations,
@@ -392,16 +393,19 @@ export const CourtGrid = memo(function CourtGrid() {
   }, [committedContacts]);
 
   // Rotation flash + #7 ghost — sweep clockwise, ghost previous jerseys fading out
-  const prevRotNumRef = useRef(rotationNum);
+  const prevRotNumRef    = useRef(rotationNum);
+  const prevServeSideRef = useRef(serveSide);
   useEffect(() => {
     if (prevRotNumRef.current !== rotationNum) {
-      prevRotNumRef.current = rotationNum;
-      setRot({ rotating: true, ghosts: prevCellsRef.current ? [...prevCellsRef.current] : null });
-      const t = setTimeout(() => setRot({ rotating: false, ghosts: null }), 600);
+      const isSideout = prevServeSideRef.current !== 'us' && serveSide === 'us';
+      prevRotNumRef.current    = rotationNum;
+      prevServeSideRef.current = serveSide;
+      setRot({ rotating: true, isSideout, ghosts: prevCellsRef.current ? [...prevCellsRef.current] : null });
+      const t = setTimeout(() => setRot({ rotating: false, isSideout: false, ghosts: null }), 600);
       return () => clearTimeout(t);
     }
-  // prevRotNumRef, prevCellsRef are refs; setRot is stable setState.
-  }, [rotationNum]);
+  // prevRotNumRef, prevServeSideRef, prevCellsRef are refs; setRot is stable setState.
+  }, [rotationNum, serveSide]);
 
   // Sub flash + sub ghost — detect which tile changed player without a rotation
   const prevCellsRef   = useRef(null);
@@ -524,6 +528,29 @@ export const CourtGrid = memo(function CourtGrid() {
     return computeAllHeat(committedContacts, playerIds, currentSetId);
   }, [cells, committedContacts, currentSetId]);
 
+  // Single computePlayerStats call for all active players — replaces 6 per-tile filters.
+  const statsMap = useMemo(() => {
+    const playerIds = new Set(cells.filter((slot) => slot?.playerId).map((slot) => slot.playerId));
+    if (!playerIds.size) return {};
+    const relevant = committedContacts.filter((c) => c.set_id === currentSetId && !c.opponent_contact && playerIds.has(c.player_id));
+    return computePlayerStats(relevant, 1);
+  }, [cells, committedContacts, currentSetId]);
+
+  // Per-player serve map for ace zone hints — reacts to every new contact.
+  // Once a player has any serve in the current set, match data supersedes season data.
+  const matchServeMap = useMemo(() => {
+    const map = {};
+    for (const c of committedContacts) {
+      if (c.action !== 'serve' || c.opponent_contact) continue;
+      if (!map[c.player_id]) map[c.player_id] = { hasServes: false, aceZones: {} };
+      map[c.player_id].hasServes = true;
+      if (c.result === 'ace' && c.zone != null) {
+        map[c.player_id].aceZones[c.zone] = (map[c.player_id].aceZones[c.zone] ?? 0) + 1;
+      }
+    }
+    return map;
+  }, [committedContacts]);
+
   return (
     <>
       {/* gap-px with bg-slate-700 creates hairline dividers between tiles */}
@@ -535,9 +562,10 @@ export const CourtGrid = memo(function CourtGrid() {
             ? (heatMap[slot.playerId] ?? { attack: null, serve: null, pass: null, dig: null })
             : { attack: null, serve: null, pass: null, dig: null };
           const isSubFlash = sub.flashIds.has(slot?.playerId);
-          // #3 directional nudge replaces border-only tile-rotating
+          // #3 directional nudge — green for sideout, orange for manual rotation
+          const nudgeSuffix = rot.isSideout ? '-so' : '';
           const cellClass  = rot.rotating
-            ? `relative tile-rotate-${ROTATION_NUDGE[gridIdx]}`
+            ? `relative tile-rotate-${ROTATION_NUDGE[gridIdx]}${nudgeSuffix}`
             : isSubFlash ? 'relative tile-sub-flash' : 'relative';
           const cellStyle  = rot.rotating ? { animationDelay: `${ROTATION_DELAYS[gridIdx]}ms` } : undefined;
           return (
@@ -552,6 +580,12 @@ export const CourtGrid = memo(function CourtGrid() {
                 position={position}
                 isServer={isServer}
                 heat={heat}
+                stats={slot?.playerId ? statsMap[slot.playerId] : undefined}
+                zoneHints={slot?.playerId
+                  ? (matchServeMap[slot.playerId]?.hasServes
+                      ? matchServeMap[slot.playerId].aceZones
+                      : aceZoneHints[slot.playerId])
+                  : undefined}
                 isSubIn={sub.flashIds.has(slot?.playerId)}
                 isDimmed={inServeReceive && gridIdx < 3}
               />

@@ -557,15 +557,55 @@
   transform-origin: center;
 }
 
-/* ── #4 Pass rating ripple ── */
-@keyframes pass-ripple {
-  0%   { transform: scale(0.15); opacity: 0.65; }
-  100% { transform: scale(2.6);  opacity: 0; }
+/* ── Pass button micro-animations (Option B) ── */
+@keyframes pass-btn-shake {
+  0%   { transform: translateX(0); }
+  18%  { transform: translateX(-3.5px); }
+  38%  { transform: translateX(3px); }
+  58%  { transform: translateX(-2px); }
+  78%  { transform: translateX(1.5px); }
+  100% { transform: translateX(0); }
 }
-.pass-ripple {
-  animation: pass-ripple 460ms var(--ease-out) forwards;
-  transform-origin: center center;
-  border-radius: 50%;
+.pass-btn-shake { animation: pass-btn-shake 290ms ease-out forwards; }
+
+@keyframes pass-btn-thud {
+  0%   { transform: scaleY(1); }
+  22%  { transform: scaleY(0.78); }
+  60%  { transform: scaleY(1.06); }
+  100% { transform: scaleY(1); }
+}
+.pass-btn-thud {
+  animation: pass-btn-thud 230ms ease-out forwards;
+  transform-origin: bottom;
+}
+
+@keyframes pass-btn-pop {
+  0%   { transform: scale(1); }
+  28%  { transform: scale(1.14); }
+  62%  { transform: scale(0.95); }
+  100% { transform: scale(1); }
+}
+.pass-btn-pop { animation: pass-btn-pop 230ms var(--ease-spring) forwards; }
+
+@keyframes pass-btn-bounce {
+  0%   { transform: translateY(0); }
+  28%  { transform: translateY(-5px); }
+  58%  { transform: translateY(1px); }
+  80%  { transform: translateY(-2px); }
+  100% { transform: translateY(0); }
+}
+.pass-btn-bounce { animation: pass-btn-bounce 330ms var(--ease-spring) forwards; }
+
+/* ── Pass rating float badge (P0/P1/P2, in-tile) ── */
+@keyframes pass-badge-float {
+  0%   { transform: translateX(-50%) translateY(0)    scale(0.7); opacity: 0; }
+  20%  { transform: translateX(-50%) translateY(-10px) scale(1.1); opacity: 1; }
+  65%  { transform: translateX(-50%) translateY(-22px) scale(1.0); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(-36px) scale(0.88); opacity: 0; }
+}
+.pass-badge-float {
+  animation: pass-badge-float 720ms ease-out forwards;
+  pointer-events: none;
 }
 
 /* ── #7 Libero ghost blur exit (emerald tint) ── */
@@ -617,6 +657,32 @@
 .tile-rotate-left  { animation: tile-rotate-left  320ms var(--ease-spring) both; }
 .tile-rotate-up    { animation: tile-rotate-up    320ms var(--ease-spring) both; }
 .tile-rotate-down  { animation: tile-rotate-down  320ms var(--ease-spring) both; }
+
+/* Sideout variants — green nudge */
+@keyframes tile-rotate-right-so {
+  0%   { box-shadow: inset 0 0 0 0 rgba(34,197,94,0);    transform: translateX(0);   }
+  30%  { box-shadow: inset 0 0 0 2px rgba(34,197,94,0.8); transform: translateX(7px); }
+  100% { box-shadow: inset 0 0 0 0 rgba(34,197,94,0);    transform: translateX(0);   }
+}
+@keyframes tile-rotate-left-so {
+  0%   { box-shadow: inset 0 0 0 0 rgba(34,197,94,0);    transform: translateX(0);    }
+  30%  { box-shadow: inset 0 0 0 2px rgba(34,197,94,0.8); transform: translateX(-7px); }
+  100% { box-shadow: inset 0 0 0 0 rgba(34,197,94,0);    transform: translateX(0);    }
+}
+@keyframes tile-rotate-up-so {
+  0%   { box-shadow: inset 0 0 0 0 rgba(34,197,94,0);    transform: translateY(0);    }
+  30%  { box-shadow: inset 0 0 0 2px rgba(34,197,94,0.8); transform: translateY(-7px); }
+  100% { box-shadow: inset 0 0 0 0 rgba(34,197,94,0);    transform: translateY(0);    }
+}
+@keyframes tile-rotate-down-so {
+  0%   { box-shadow: inset 0 0 0 0 rgba(34,197,94,0);    transform: translateY(0);   }
+  30%  { box-shadow: inset 0 0 0 2px rgba(34,197,94,0.8); transform: translateY(7px); }
+  100% { box-shadow: inset 0 0 0 0 rgba(34,197,94,0);    transform: translateY(0);   }
+}
+.tile-rotate-right-so { animation: tile-rotate-right-so 320ms var(--ease-spring) both; }
+.tile-rotate-left-so  { animation: tile-rotate-left-so  320ms var(--ease-spring) both; }
+.tile-rotate-up-so    { animation: tile-rotate-up-so    320ms var(--ease-spring) both; }
+.tile-rotate-down-so  { animation: tile-rotate-down-so  320ms var(--ease-spring) both; }
 
 /* ── Net cable wave — gentle horizontal sway like a real net in a gym ── */
 @keyframes net-cable-wave {
@@ -838,6 +904,15 @@
 }
 .group:active .vb-ball-spin {
   animation: vb-ball-rotate 0.5s linear infinite;
+}
+
+/* ── VBPlayerScene pose fade-in ── */
+@keyframes vb-pose-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.vb-pose-in {
+  animation: vb-pose-in 0.5s ease-out both;
 }
 
 /* ── Perfect pass 3! pop badge ── */

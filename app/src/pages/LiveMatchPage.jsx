@@ -11,7 +11,7 @@ import { useMatchStats } from '../hooks/useMatchStats';
 import { useRecordAlerts } from '../hooks/useRecordAlerts';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { haptic } from '../utils/haptic';
-import { STORAGE_KEYS } from '../utils/storage';
+import { STORAGE_KEYS, getBoolStorage, setBoolStorage } from '../utils/storage';
 import { ScoreHeader } from '../components/match/ScoreHeader';
 import { CourtGrid } from '../components/court/CourtGrid';
 import { ActionBar } from '../components/match/ActionBar';
@@ -44,6 +44,7 @@ export function LiveMatchPage() {
   const [scoreAtTimeoutClose, setScoreAtTimeoutClose] = useState(null);
   const [liberoPickerOpen, setLiberoPickerOpen] = useState(false);
   const [liberoSwapOpen,   setLiberoSwapOpen]   = useState(false);
+  const [rotErrOpen,       setRotErrOpen]       = useState(false);
 
   const [liberoPlayer,        setLiberoPlayer]        = useState(null);
   const [confettiNav,         setConfettiNav]         = useState(null); // { path, matchWin } | null
@@ -51,8 +52,19 @@ export function LiveMatchPage() {
   const [teamName,            setTeamName]            = useState('');
   const [opponentName,        setOpponentName]        = useState('');
   const [liveStatsDefaultTab, setLiveStatsDefaultTab] = useState(null);
+  const [aceZoneHints,        setAceZoneHints]        = useState({}); // { [playerId]: { [zone]: count } }
+  const [flipLayout,          setFlipLayout]          = useState(() => getBoolStorage(STORAGE_KEYS.FLIP_LAYOUT));
+
+  const handleToggleFlip = useCallback(() => {
+    setFlipLayout((prev) => {
+      const next = !prev;
+      setBoolStorage(STORAGE_KEYS.FLIP_LAYOUT, next);
+      return next;
+    });
+  }, []);
 
   const {
+    recordHomeRotError,
     setMatch, setLineup, setPlayerNicknames, setLibero, swapLibero,
     endSet, endMatch, finishRevisedSet, clearPendingSetWin,
     confirmServeZone, dismissServeZoneModal, loadServeReticles, loadSetFormationData,
@@ -60,6 +72,7 @@ export function LiveMatchPage() {
     pendingServeContact, serveReticles,
     teamId, lineup, setNumber, pointHistory, currentRun,
   } = useMatchStore(useShallow((s) => ({
+    recordHomeRotError:   s.recordHomeRotError,
     setMatch:             s.setMatch,
     setLineup:            s.setLineup,
     setPlayerNicknames:   s.setPlayerNicknames,
@@ -181,7 +194,7 @@ export function LiveMatchPage() {
 
   useEffect(() => {
     // Lock to landscape; release on unmount
-    screen.orientation?.lock('landscape').catch(() => {});
+    screen.orientation?.lock('landscape').catch((err) => { console.warn('[VBStat] orientation lock:', err?.message ?? err); });
     return () => screen.orientation?.unlock?.();
   }, []);
 
@@ -299,13 +312,35 @@ export function LiveMatchPage() {
       loadSetFormationData(currentSet);
       setReady(true);
       await loadServeReticles(currentSet.id);
+
+      // Load ace zone hints from full season data (non-critical, fires after UI is ready)
+      if (match.season_id) {
+        try {
+          const seasonMatches = await db.matches.where('season_id').equals(match.season_id).toArray();
+          const seasonMatchIds = seasonMatches.map((m) => m.id);
+          if (seasonMatchIds.length) {
+            const aces = await db.contacts
+              .where('match_id').anyOf(seasonMatchIds)
+              .filter((c) => c.action === 'serve' && c.result === 'ace' && c.zone != null)
+              .toArray();
+            const hints = {};
+            for (const c of aces) {
+              if (!hints[c.player_id]) hints[c.player_id] = {};
+              hints[c.player_id][c.zone] = (hints[c.player_id][c.zone] ?? 0) + 1;
+            }
+            setAceZoneHints(hints);
+          }
+        } catch (e) {
+          // hints are non-critical — silent fail
+        }
+      }
       } catch (err) {
         console.error('LiveMatchPage init failed:', err);
       }
     }
 
     init();
-  }, [matchIdParam]);
+  }, [matchIdParam, isRevising, revisingSetId]);
 
   if (!ready) {
     return (
@@ -359,9 +394,10 @@ export function LiveMatchPage() {
           opponentName={opponentName}
           onTimeoutCalled={() => setTimeoutOpen(true)}
           onAssignLibero={!liberoPlayer ? () => setLiberoPickerOpen(true) : undefined}
+          flipLayout={flipLayout}
         />
         <div className="flex flex-row flex-1 min-h-0">
-          <CourtGrid />
+          <CourtGrid aceZoneHints={aceZoneHints} />
           <OppScoringColumn />
         </div>
       </div>
@@ -372,9 +408,20 @@ export function LiveMatchPage() {
         onStatsOpen={() => setStatsOpen(true)}
         onSummaryOpen={() => setSummaryOpen(true)}
         onLiberoIn={() => setLiberoSwapOpen(true)}
+        onRotErrOpen={() => setRotErrOpen(true)}
         liberoPlayer={liberoPlayer}
         alertCount={activeAlerts.length}
       />
+
+      {rotErrOpen && (
+        <ConfirmDialog
+          title="Rotation Violation / Overlapping?"
+          message="Award 1 point to the opposing team for a home team rotation error."
+          confirmLabel="Confirm ROT Error"
+          onConfirm={() => { recordHomeRotError(); setRotErrOpen(false); }}
+          onCancel={() => setRotErrOpen(false)}
+        />
+      )}
 
       {subOpen          && <SubstitutionModal onClose={() => setSubOpen(false)} />}
       {liberoPickerOpen && <LiberoPickerModal onClose={() => setLiberoPickerOpen(false)} onPick={handleLiberoPick} />}
@@ -385,7 +432,7 @@ export function LiveMatchPage() {
           onPick={(idx) => { swapLibero(liberoPlayer, idx); setLiberoSwapOpen(false); }}
         />
       )}
-      {menuOpen  && <MenuDrawer        onClose={() => setMenuOpen(false)} />}
+      {menuOpen  && <MenuDrawer onClose={() => setMenuOpen(false)} flipLayout={flipLayout} onFlipLayout={handleToggleFlip} />}
       <LiveStatsModal
         open={statsOpen}
         onClose={() => { setStatsOpen(false); setLiveStatsDefaultTab(null); }}
@@ -429,14 +476,32 @@ export function LiveMatchPage() {
         />
       )}
 
-      {pendingServeContact && (
-        <ServeZoneModal
-          pendingContact={pendingServeContact}
-          reticles={serveReticles}
-          onConfirm={confirmServeZone}
-          onDismiss={dismissServeZoneModal}
-        />
-      )}
+      {pendingServeContact && (() => {
+        const pid = pendingServeContact.player_id;
+        const hasMatchServes = committedContacts.some(
+          (c) => c.player_id === pid && c.action === 'serve' && !c.opponent_contact
+        );
+        let serverAceZones;
+        if (hasMatchServes) {
+          serverAceZones = {};
+          for (const c of committedContacts) {
+            if (c.player_id === pid && c.action === 'serve' && c.result === 'ace' && c.zone != null && !c.opponent_contact) {
+              serverAceZones[c.zone] = (serverAceZones[c.zone] ?? 0) + 1;
+            }
+          }
+        } else {
+          serverAceZones = aceZoneHints[pid] ?? {};
+        }
+        return (
+          <ServeZoneModal
+            pendingContact={pendingServeContact}
+            reticles={serveReticles}
+            onConfirm={confirmServeZone}
+            onDismiss={dismissServeZoneModal}
+            serverAceZones={serverAceZones}
+          />
+        );
+      })()}
 
       {pendingSetWin && (() => {
         const setsNeeded  = format === FORMAT.BEST_OF_3 ? 2 : 3;

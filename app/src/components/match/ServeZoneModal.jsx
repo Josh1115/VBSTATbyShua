@@ -13,7 +13,7 @@ function calcZone(nx, ny) {
   return ZONE_GRID[row][col];
 }
 
-export function ServeZoneModal({ pendingContact, reticles, onConfirm, onDismiss }) {
+export function ServeZoneModal({ pendingContact, reticles, onConfirm, onDismiss, serverAceZones = {} }) {
   const courtRef = useRef(null);
 
   function handleCourtTap(e) {
@@ -45,30 +45,53 @@ export function ServeZoneModal({ pendingContact, reticles, onConfirm, onDismiss 
           <rect width={W} height={H} fill="#0f172a" />
 
           {/* Zone cells */}
-          {ZONE_GRID.map((row, ri) =>
-            row.map((zone, ci) => {
-              const x = ci * (W / 3);
-              const y = ri * (H / 2);
-              return (
-                <g key={zone}>
-                  <rect
-                    x={x} y={y}
-                    width={W / 3} height={H / 2}
-                    fill="transparent"
-                    stroke="#334155"
-                    strokeWidth={1}
-                  />
-                  <text
-                    x={x + W / 6} y={y + H / 4}
-                    textAnchor="middle" dominantBaseline="middle"
-                    fill="rgba(148,163,184,0.4)" fontSize={22} fontWeight="bold"
-                  >
-                    {zone}
-                  </text>
-                </g>
-              );
-            })
-          )}
+          {(() => {
+            const maxCount = Object.keys(serverAceZones).length > 0
+              ? Math.max(...Object.values(serverAceZones)) : 0;
+            return ZONE_GRID.map((row, ri) =>
+              row.map((zone, ci) => {
+                const x = ci * (W / 3);
+                const y = ri * (H / 2);
+                const count = serverAceZones[zone] ?? 0;
+                const heatAlpha = maxCount > 0 && count > 0
+                  ? 0.15 + (count / maxCount) * 0.35 : 0;
+                return (
+                  <g key={zone}>
+                    {heatAlpha > 0 && (
+                      <rect
+                        x={x} y={y}
+                        width={W / 3} height={H / 2}
+                        fill={`rgba(249,115,22,${heatAlpha.toFixed(2)})`}
+                      />
+                    )}
+                    <rect
+                      x={x} y={y}
+                      width={W / 3} height={H / 2}
+                      fill="transparent"
+                      stroke="#334155"
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={x + W / 6} y={y + H / 4 - (count > 0 ? 12 : 0)}
+                      textAnchor="middle" dominantBaseline="middle"
+                      fill="rgba(148,163,184,0.4)" fontSize={22} fontWeight="bold"
+                    >
+                      {zone}
+                    </text>
+                    {count > 0 && (
+                      <text
+                        x={x + W / 6} y={y + H / 4 + 16}
+                        textAnchor="middle" dominantBaseline="middle"
+                        fill="rgba(251,146,60,0.85)" fontSize={14} fontWeight="bold"
+                      >
+                        {count} ACE{count > 1 ? 'S' : ''}
+                      </text>
+                    )}
+                  </g>
+                );
+              })
+            );
+          })()}
 
           {/* Net line at bottom with NET label inside the SVG */}
           <line x1={0} y1={H - 2} x2={W} y2={H - 2} stroke="#f97316" strokeWidth={3} />

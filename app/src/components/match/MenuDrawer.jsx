@@ -8,7 +8,7 @@ import { useMatchStore } from '../../store/matchStore';
 import { db } from '../../db/schema';
 import { SIDE } from '../../constants';
 
-export function MenuDrawer({ onClose }) {
+export function MenuDrawer({ onClose, flipLayout = false, onFlipLayout }) {
   const matchId         = useMatchStore((s) => s.matchId);
   const currentSetId    = useMatchStore((s) => s.currentSetId);
   const ourScore        = useMatchStore((s) => s.ourScore);
@@ -56,6 +56,20 @@ export function MenuDrawer({ onClose }) {
   return (
     <>
       <Drawer title="Match Menu" onClose={onClose}>
+        <div className="flex items-center justify-between py-3 mb-3 border-b border-slate-700">
+          <div>
+            <div className="text-sm font-medium text-white">Flip Team Layout</div>
+            <div className="text-xs text-slate-400 mt-0.5">Show your team on the right side</div>
+          </div>
+          <button
+            onClick={onFlipLayout}
+            className={`relative w-11 h-6 rounded-full transition-colors ${flipLayout ? 'bg-primary' : 'bg-slate-600'}`}
+            aria-checked={flipLayout}
+            role="switch"
+          >
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${flipLayout ? 'translate-x-5' : ''}`} />
+          </button>
+        </div>
         <div className="space-y-3">
           <Button variant="secondary" className="w-full justify-start" onClick={() => setConfirmMatchSetup(true)}>
             Match Set Up

@@ -11,7 +11,7 @@ export const getSetsPlayedCount = async (matchId) => {
   const sets = await db.sets.where('match_id').equals(matchId).toArray();
   const complete   = sets.filter(s => s.status === 'complete').length;
   const inProgress = sets.some(s => s.status === 'in_progress');
-  return complete + (inProgress ? 1 : 0) || 1;
+  return Math.max(1, complete + (inProgress ? 1 : 0));
 };
 
 // Batched version — single query for multiple matches, returns { [matchId]: count }
@@ -49,6 +49,15 @@ export const getContactsForMatches = (matchIds) =>
 
 export const getMatchesForSeason = (seasonId) =>
   db.matches.where('season_id').equals(seasonId).toArray();
+
+// Sum of opp_score across all complete sets for the given matches
+export const getOppScoredForMatches = async (matchIds) => {
+  if (!matchIds.length) return 0;
+  const sets = await db.sets.where('match_id').anyOf(matchIds).toArray();
+  return sets
+    .filter(s => s.status === 'complete')
+    .reduce((sum, s) => sum + (s.opp_score ?? 0), 0);
+};
 
 // Rallies for multiple matches — used by season-level stats
 export const getRalliesForMatches = async (matchIds) => {

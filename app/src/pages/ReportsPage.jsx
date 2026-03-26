@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useSwipe } from '../hooks/useSwipe';
+import { buildPlayerMaps } from '../utils/players';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { getIntStorage, STORAGE_KEYS } from '../utils/storage';
 import { db } from '../db/schema';
@@ -12,6 +14,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { StatTable } from '../components/stats/StatTable';
 import { ServeReticlePlot, PlayerServePlacementCard } from '../components/stats/ServeReticlePlot';
 import { RotationSpotlight } from '../components/stats/RotationSpotlight';
+import { PointQualityPanel } from '../components/stats/PointQualityPanel';
 import { HittingBarChart } from '../components/charts/HittingBarChart';
 import { RotationRadarChart } from '../components/charts/RotationRadarChart';
 import { SideoutPieChart } from '../components/charts/SideoutPieChart';
@@ -25,6 +28,7 @@ const TABS = [
   { value: 'trends',   label: 'Trends'             },
   { value: 'heatmap',  label: 'Heat Map'           },
 ];
+const TAB_VALUES = TABS.map(t => t.value);
 
 const PLAYER_COLS = [
   { key: 'name',      label: 'Player' },
@@ -46,23 +50,43 @@ const PLAYER_COLS = [
 ];
 
 // Each entry uses either `key` (looked up on stats.team) or `get(stats)` for derived/nested values.
-const TEAM_STATS = [
-  { label: 'Srv Att',    key: 'sa',      fmt: fmtCount      },
-  { label: 'Srv%',       key: 'si_pct',  fmt: fmtPct        },
-  { label: 'ACE%',       key: 'ace_pct', fmt: fmtPct        },
-  { label: 'Atk Att',    key: 'ta',      fmt: fmtCount      },
-  { label: 'Kills',      key: 'k',       fmt: fmtCount      },
-  { label: 'K%',         key: 'k_pct',   fmt: fmtPct        },
-  { label: 'Atk Errors', key: 'ae',      fmt: fmtCount      },
-  { label: 'Hit%',       key: 'hit_pct', fmt: fmtHitting    },
-  { label: 'Assists',    key: 'ast',     fmt: fmtCount      },
-  { label: 'BHE',        key: 'bhe',     fmt: fmtCount      },
-  { label: 'Blocks',     get: (s) => (s.team.bs ?? 0) + (s.team.ba ?? 0), fmt: fmtCount },
-  { label: 'Pass Avg',   key: 'apr',     fmt: fmtPassRating },
-  { label: 'Digs',       key: 'dig',     fmt: fmtCount      },
-  { label: 'Earned Pts', get: (s) => s.pointQuality?.earned?.total,        fmt: fmtCount },
-  { label: 'Free Pts',   get: (s) => s.pointQuality?.free?.total,          fmt: fmtCount },
-  { label: 'Given Pts',  get: (s) => s.pointQuality?.given?.total,         fmt: fmtCount },
+const fmtBlocks = (v) => v == null ? '—' : v % 1 === 0 ? String(v) : v.toFixed(1);
+const fmtRatio  = (v) => v == null ? '—' : v.toFixed(2);
+
+const TEAM_STAT_SECTIONS = [
+  {
+    label: 'Serving',
+    items: [
+      { label: 'Serve %',   key: 'si_pct',  fmt: fmtPct        },
+      { label: 'Ace %',     key: 'ace_pct', fmt: fmtPct        },
+      { label: 'Serve Att', key: 'sa',      fmt: fmtCount      },
+      { label: 'Aces',      key: 'ace',     fmt: fmtCount      },
+      { label: 'Net Miss',  key: 'se_net',  fmt: fmtCount      },
+      { label: 'OB Miss',   key: 'se_ob',   fmt: fmtCount      },
+    ],
+  },
+  {
+    label: 'Attacking',
+    items: [
+      { label: 'Hit%',      key: 'hit_pct', fmt: fmtHitting    },
+      { label: 'K%',        key: 'k_pct',   fmt: fmtPct        },
+      { label: 'Atk Att',   key: 'ta',      fmt: fmtCount      },
+      { label: 'Kills',     key: 'k',       fmt: fmtCount      },
+      { label: 'AE',        key: 'ae',      fmt: fmtCount      },
+      { label: 'K:AE',      get: (s) => { const ae = s.team.ae ?? 0; return ae > 0 ? (s.team.k ?? 0) / ae : null; }, fmt: fmtRatio },
+    ],
+  },
+  {
+    label: 'Defense',
+    items: [
+      { label: 'Blocks', get: (s) => { const b = (s.team.bs ?? 0) + (s.team.ba ?? 0) * 0.5; return b; }, fmt: fmtBlocks },
+      { label: 'Digs',   key: 'dig',  fmt: fmtCount      },
+      { label: 'RECs',   key: 'pa',   fmt: fmtCount      },
+      { label: 'APR',    key: 'apr',  fmt: fmtPassRating },
+      { label: 'Aced',   key: 'p0',   fmt: fmtCount      },
+      { label: 'BHE',    get: (s) => (s.pointQuality?.given?.lift ?? 0) + (s.pointQuality?.given?.dbl ?? 0) + (s.team.bhe ?? 0) + (s.team.fbe ?? 0), fmt: fmtCount },
+    ],
+  },
 ];
 
 // IS/OOS per-rotation table columns
@@ -152,6 +176,9 @@ const chipClass = (active) =>
 
 export function ReportsPage() {
   const [tab, setTab] = useState('team');
+  const onSwipeLeft  = useCallback(() => setTab(t => { const i = TAB_VALUES.indexOf(t); return i < TAB_VALUES.length - 1 ? TAB_VALUES[i + 1] : t; }), []);
+  const onSwipeRight = useCallback(() => setTab(t => { const i = TAB_VALUES.indexOf(t); return i > 0 ? TAB_VALUES[i - 1] : t; }), []);
+  const swipeHandlers = useSwipe({ onSwipeLeft, onSwipeRight });
   const [playerStatView,        setPlayerStatView]        = useState('serving');
   const [playerServeView,       setPlayerServeView]       = useState('all');
   const [selectedServingPlayerId, setSelectedServingPlayerId] = useState(null);
@@ -191,14 +218,7 @@ export function ReportsPage() {
       : Promise.resolve([]),
     [selectedTeamId]
   );
-  const playerNames = useMemo(
-    () => Object.fromEntries((players ?? []).map(p => [p.id, p.name])),
-    [players]
-  );
-  const playerJerseys = useMemo(
-    () => Object.fromEntries((players ?? []).map(p => [p.id, p.jersey_number ?? ''])),
-    [players]
-  );
+  const { playerNames, playerJerseys } = useMemo(() => buildPlayerMaps(players), [players]);
 
   // Reset everything when team changes
   function handleTeamChange(e) {
@@ -264,10 +284,29 @@ export function ReportsPage() {
           id: pid,
           name: playerNames[pid] ?? `#${pid}`,
           ...s,
+          f_se_pct: s.f_sa > 0 ? s.f_se / s.f_sa : null,
+          t_se_pct: s.t_sa > 0 ? s.t_se / s.t_sa : null,
         }))
       : [],
     [stats, playerNames]
   );
+
+  const playerTotalsRow = useMemo(() => {
+    if (!stats?.team) return null;
+    const t = stats.team;
+    return {
+      id:        '__totals__',
+      name:      'Totals',
+      ...t,
+      f_se_pct:  t.f_sa > 0 ? t.f_se / t.f_sa : null,
+      t_se_pct:  t.t_sa > 0 ? t.t_se / t.t_sa : null,
+      sp:        stats.setsPlayed ?? null,
+      mp:        stats.matchCount  ?? null,
+      pos_label: null,
+      pos_mult:  null,
+      ver:       null,
+    };
+  }, [stats]);
 
   const hittingBarData = useMemo(() =>
     playerRows.filter(r => r.ta > 0).map(r => ({ name: r.name, hit_pct: r.hit_pct })),
@@ -500,22 +539,34 @@ export function ReportsPage() {
 
           <TabBar tabs={TABS} active={tab} onChange={setTab} />
 
-          <div className="p-4 md:p-6 space-y-6">
+          <div className="p-4 md:p-6 space-y-6" {...swipeHandlers}>
 
             {/* ── Team Stats ──────────────────────────────────────────── */}
             {tab === 'team' && (
               <>
                 {/* Stat grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {TEAM_STATS.map(({ label, key, get: getVal, fmt }) => (
-                    <div key={label} className="bg-surface rounded-xl p-3">
-                      <div className="text-xs text-slate-400">{label}</div>
-                      <div className="text-xl font-bold text-primary mt-0.5">
-                        {fmt(key ? stats.team[key] : getVal(stats))}
+                <div className="space-y-2">
+                  {TEAM_STAT_SECTIONS.map(({ label: sectionLabel, items }) => (
+                    <div key={sectionLabel}>
+                      <SectionHeader>{sectionLabel}</SectionHeader>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {items.map(({ label, key, get: getVal, fmt }) => (
+                          <div key={label} className="bg-surface rounded-lg px-1 py-1 text-center">
+                            <div className="text-[10px] text-slate-400 leading-none">{label}</div>
+                            <div className="text-base font-bold text-primary mt-0.5 leading-none">
+                              {fmt(key ? stats.team[key] : getVal(stats))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   ))}
                 </div>
+
+                {/* Point Quality — mirrors the Scoring tab in Match Summary */}
+                {stats.pointQuality && (
+                  <PointQualityPanel pq={stats.pointQuality} oppScored={stats.oppScored} />
+                )}
 
                 {/* In System vs Out of System */}
                 {stats.isOos && (stats.isOos.total.is.ta > 0 || stats.isOos.total.oos.ta > 0) && (
@@ -586,6 +637,7 @@ export function ReportsPage() {
                     { value: 'attacking', label: 'Attacking' },
                     { value: 'blocking',  label: 'Blocking'  },
                     { value: 'defense',   label: 'Defense'   },
+                    { value: 'ver',       label: 'VER'       },
                   ].map(({ value, label }) => (
                     <button
                       key={value}
@@ -622,6 +674,7 @@ export function ReportsPage() {
                     <StatTable
                       columns={SERVING_COLS[playerServeView]}
                       rows={playerRows}
+                      totalsRow={playerTotalsRow}
                       onRowClick={(row) => setSelectedServingPlayerId(id => String(id) === String(row.id) ? null : row.id)}
                       selectedRowId={selectedServingPlayerId}
                     />
@@ -639,16 +692,19 @@ export function ReportsPage() {
                   </>
                 )}
                 {playerStatView === 'passing' && (
-                  <StatTable columns={TAB_COLUMNS.passing} rows={playerRows} />
+                  <StatTable columns={TAB_COLUMNS.passing} rows={playerRows} totalsRow={playerTotalsRow} />
                 )}
                 {playerStatView === 'attacking' && (
-                  <StatTable columns={TAB_COLUMNS.attacking} rows={playerRows} />
+                  <StatTable columns={TAB_COLUMNS.attacking} rows={playerRows} totalsRow={playerTotalsRow} />
                 )}
                 {playerStatView === 'blocking' && (
-                  <StatTable columns={TAB_COLUMNS.blocking} rows={playerRows} />
+                  <StatTable columns={TAB_COLUMNS.blocking} rows={playerRows} totalsRow={playerTotalsRow} />
                 )}
                 {playerStatView === 'defense' && (
-                  <StatTable columns={TAB_COLUMNS.defense} rows={playerRows} />
+                  <StatTable columns={TAB_COLUMNS.defense} rows={playerRows} totalsRow={playerTotalsRow} />
+                )}
+                {playerStatView === 'ver' && (
+                  <StatTable columns={TAB_COLUMNS.ver} rows={playerRows} totalsRow={playerTotalsRow} />
                 )}
               </>
             )}

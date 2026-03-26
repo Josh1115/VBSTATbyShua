@@ -68,10 +68,13 @@ export const RESULT = {
   // dig
   SUCCESS:             'success',
   FREEBALL:            'freeball',
+  // freeball
+  FREE_BALL_ERROR:     'free_ball_error',
   // other errors
   LIFT:                'lift',
   DOUBLE:              'double',
   NET_TOUCH:           'net',
+  ROTATION_ERROR:      'rotation_error',
 };
 
 // Match format
@@ -93,6 +96,22 @@ export const TRACKABLE_STATS = [
   { label: 'Kill %',          key: 'k_pct',   type: 'rate'  },
   { label: 'Avg Pass Rating', key: 'apr',     type: 'rate'  },
 ];
+
+// VER position multipliers — adjust raw efficiency to account for positional opportunity.
+// Libero (1.20) and DS (1.15) face harder serve-receive and dig situations with fewer
+// high-value scoring actions, so their raw VER underrepresents contribution.
+// MB (1.05) is slightly boosted because middle opportunities are fewer per set than OH/OPP.
+// S (0.90) reflects that setters accumulate assists (not kills), which are weighted lower.
+// OH/OPP (1.00) are the baseline. Adjust for your program's positional balance if needed.
+export const POSITION_MULTIPLIERS = {
+  OH:  1.00,
+  OPP: 1.00,
+  RS:  1.00,
+  MB:  1.05,
+  S:   0.90,
+  L:   1.20,
+  DS:  1.15,
+};
 
 // NFHS rules
 // MAX_SUBS_PER_SET: intentionally 18 (club/college rules) rather than NFHS's 12.

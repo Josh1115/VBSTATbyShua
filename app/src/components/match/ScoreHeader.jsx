@@ -1,6 +1,5 @@
 import { memo, useEffect, useRef, useState, useCallback } from 'react';
 import { useMatchStore } from '../../store/matchStore';
-import { getBoolStorage, STORAGE_KEYS } from '../../utils/storage';
 import { useMatchStats } from '../../hooks/useMatchStats';
 import { SIDE, FORMAT, NFHS } from '../../constants';
 import { LiberoBox } from './LiberoBox';
@@ -57,6 +56,7 @@ function EmberCanvas({ runCount }) {
     return () => {
       cancelAnimationFrame(rafRef.current);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.length = 0;
     };
   }, [runCount]);
 
@@ -227,8 +227,8 @@ const NudgeBtn = memo(function NudgeBtn({ label, onTap }) {
   );
 });
 
-export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, opponentName, onTimeoutCalled, onAssignLibero }) {
-  const flipped = getBoolStorage(STORAGE_KEYS.FLIP_LAYOUT);
+export const ScoreHeader = memo(function ScoreHeader({ liberoPlayer, teamName, opponentName, onTimeoutCalled, onAssignLibero, flipLayout = false }) {
+  const flipped = flipLayout;
   const ourScore      = useMatchStore((s) => s.ourScore);
   const oppScore      = useMatchStore((s) => s.oppScore);
   const ourSetsWon    = useMatchStore((s) => s.ourSetsWon);

@@ -64,7 +64,7 @@ export function SetLineupPage() {
       await loadSetData(currentSet);
     }
     load();
-  }, [matchId]);
+  }, [matchId, revisingSetId]);
 
   async function loadSetData(set) {
     setSetId(set.id);
@@ -109,7 +109,7 @@ export function SetLineupPage() {
     [teamId]
   );
 
-  const applysavedLineup = (sl) => {
+  const applySavedLineup = (sl) => {
     setLineupState(sl.serve_order.map(String));
     setStartZone(sl.start_zone ?? 1);
     setLiberoId(sl.libero_player_id ? String(sl.libero_player_id) : '');
@@ -239,7 +239,7 @@ export function SetLineupPage() {
                 {savedLineups.map((sl) => (
                   <button
                     key={sl.id}
-                    onClick={() => applysavedLineup(sl)}
+                    onClick={() => applySavedLineup(sl)}
                     className="w-full text-left bg-surface border border-slate-600 hover:border-primary rounded-lg px-4 py-3 transition-colors"
                   >
                     <span className="font-semibold text-white">{sl.name}</span>

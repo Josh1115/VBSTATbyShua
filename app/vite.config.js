@@ -15,6 +15,18 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/__tests__/**/*.test.js'],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-') || id.includes('node_modules/victory-')) return 'charts';
+          if (id.includes('node_modules/jspdf') || id.includes('node_modules/html2canvas')) return 'export';
+          if (id.includes('node_modules/dexie')) return 'dexie';
+          if (id.includes('node_modules/react-dom')) return 'react-dom';
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

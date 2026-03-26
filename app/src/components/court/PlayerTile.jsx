@@ -5,7 +5,20 @@ import { useShallow } from 'zustand/react/shallow';
 import { ACTION, RESULT, SERVE_TYPE, SIDE } from '../../constants';
 import { getStorageItem, STORAGE_KEYS } from '../../utils/storage';
 import { fmtPlayerName } from '../../stats/formatters';
-import { computePlayerStats } from '../../stats/engine';
+
+// ── Module-level style constants — defined once, never re-created on render ──
+const JERSEY_SVG_STYLE = { width: '121%', height: '3.025vmin', top: '50%', left: '-10.5%', transform: 'translateY(-50%)' };
+const NAME_STYLE       = { fontSize: '3.15vmin', letterSpacing: '0.06em', fontFamily: 'ui-rounded, system-ui, sans-serif' };
+const BADGE_POS_STYLE  = { bottom: '36%', left: '50%' };
+const DELAY_50         = { animationDelay: '50ms' };
+const DELAY_100        = { animationDelay: '100ms' };
+
+// Pre-built pass badge text styles (one per rating) — avoids recreating every render
+const PASS_BADGE_STYLES = [
+  { background: 'rgba(0,0,0,0.82)', color: '#f87171', fontWeight: 900, fontSize: '2.2vmin', fontFamily: 'ui-rounded, system-ui, sans-serif', letterSpacing: '0.04em', padding: '1px 5px', borderRadius: '5px', boxShadow: '0 0 7px #f8717155', whiteSpace: 'nowrap' },
+  { background: 'rgba(0,0,0,0.82)', color: '#fb923c', fontWeight: 900, fontSize: '2.2vmin', fontFamily: 'ui-rounded, system-ui, sans-serif', letterSpacing: '0.04em', padding: '1px 5px', borderRadius: '5px', boxShadow: '0 0 7px #fb923c55', whiteSpace: 'nowrap' },
+  { background: 'rgba(0,0,0,0.82)', color: '#facc15', fontWeight: 900, fontSize: '2.2vmin', fontFamily: 'ui-rounded, system-ui, sans-serif', letterSpacing: '0.04em', padding: '1px 5px', borderRadius: '5px', boxShadow: '0 0 7px #facc1555', whiteSpace: 'nowrap' },
+];
 
 // Restart a CSS animation on a DOM element without re-rendering.
 // RAF avoids forced synchronous reflow (void el.offsetWidth pattern).
@@ -25,6 +38,20 @@ const Btn = memo(function Btn({ label, onTap, cls, style }) {
       onPointerDown={(e) => { e.preventDefault(); onTap?.(); flashEl(ref.current); }}
       className={`flex-1 flex items-center justify-center text-[2.5vmin] font-bold leading-none select-none
         rounded-md active:brightness-75 transition-none ${cls}`}
+    >
+      {label}
+    </button>
+  );
+});
+
+const PASS_ANIM = ['pass-btn-shake', 'pass-btn-thud', 'pass-btn-pop', 'pass-btn-bounce'];
+const PassBtn = memo(function PassBtn({ rating, label, onTap, cls }) {
+  const ref = useRef(null);
+  return (
+    <button
+      ref={ref}
+      onPointerDown={(e) => { e.preventDefault(); onTap?.(); flashEl(ref.current, PASS_ANIM[rating]); }}
+      className={`flex-1 flex items-center justify-center text-[2.5vmin] font-bold leading-none select-none rounded-md transition-none ${cls}`}
     >
       {label}
     </button>
@@ -54,10 +81,10 @@ const JERSEY_HEX = {
   'gray':  '#94a3b8',
 };
 
-export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, heat, isSubIn = false, isDimmed = false }) {
+export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, heat, stats, zoneHints, isSubIn = false, isDimmed = false }) {
   const {
     recordContact, addPoint, tapHblk, recordOppBlock,
-    pendingHblk, serveSide, committedContacts, currentSetId,
+    pendingHblk, serveSide,
     liberoId, playerNicknames, teamJerseyColor, liberoJerseyColor,
     rallyCount, rotationNum,
   } = useMatchStore(useShallow((s) => ({
@@ -67,8 +94,6 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
     recordOppBlock:    s.recordOppBlock,
     pendingHblk:       s.pendingHblk,
     serveSide:         s.serveSide,
-    committedContacts: s.committedContacts,
-    currentSetId:      s.currentSetId,
     liberoId:          s.liberoId,
     playerNicknames:   s.playerNicknames,
     teamJerseyColor:   s.teamJerseyColor,
@@ -89,18 +114,18 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const [sePending,     setSePending]     = useState(false);
   const [aePending,     setAePending]     = useState(false);
   const [passRing,      setPassRing]      = useState(null); // null | 0|1|2|3
-  const [rippleKey,     setRippleKey]     = useState(0);
-  const [rippleColor,   setRippleColor]   = useState(null);
-  const passRingTimer = useRef(null);
+  const [passBadge,     setPassBadge]     = useState(null); // null | { rating, key }
+  const passRingTimer  = useRef(null);
+  const passBadgeTimer = useRef(null);
 
-  useEffect(() => () => clearTimeout(passRingTimer.current), []);
+  useEffect(() => () => { clearTimeout(passRingTimer.current); clearTimeout(passBadgeTimer.current); }, []);
 
   useEffect(() => {
     setServeRecorded(false);
     setServeType(null);
     setSePending(false);
     setAePending(false);
-  }, [rallyCount]);
+  }, [rallyCount, serveSide]);
 
   const isServing = serveSide === SIDE.US;
   const showServeRow = isServer && isServing && !serveRecorded;
@@ -112,7 +137,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const tap = (action, result, extra = {}) => {
     flashJersey();
     recordContact({ player_id: slot.playerId, action, result, ...extra })
-      .catch((err) => { console.error('tap recordContact', err); showToast(`Recording error: ${err?.message ?? err}`, 'error'); });
+      .catch((err) => { console.error('[VBStat] tap recordContact failed:', err); showToast(`Recording error: ${err?.message ?? err}`, 'error'); });
   };
 
   const tapAndScore = async (action, result, extra = {}) => {
@@ -120,52 +145,54 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
     if (action === ACTION.ATTACK && result === RESULT.KILL)  vibrate(30);
     else if (action === ACTION.SERVE  && result === RESULT.ACE)  vibrate([18, 25, 45]);
     else if (action === ACTION.BLOCK  && result === RESULT.SOLO) vibrate(45);
-    // Capture rally number BEFORE addPoint increments it so the scoring
-    // contact lands in the same rally bucket as the pass/dig that preceded it.
-    const currentRally = rallyCount;
+    // Read fresh state at tap time (not stale render-time value) so the contact
+    // lands in the correct rally bucket even if state changed since last render.
+    const currentRally = useMatchStore.getState().rallyCount;
     addPoint(SIDE.US);
     try {
       return await recordContact({ player_id: slot.playerId, action, result, rally_number: currentRally, ...extra });
     } catch (err) {
-      console.error('tapAndScore recordContact', err);
+      console.error('[VBStat] tapAndScore recordContact failed:', err);
       showToast(`Stat not recorded: ${err?.message ?? err}`, 'error');
     }
   };
 
   const tapAndScoreThem = async (action, result, extra = {}) => {
     flashJersey();
-    const currentRally = rallyCount;
+    const currentRally = useMatchStore.getState().rallyCount;
     addPoint(SIDE.THEM);
     try {
       await recordContact({ player_id: slot.playerId, action, result, rally_number: currentRally, ...extra });
     } catch (err) {
-      console.error('tapAndScoreThem recordContact', err);
+      console.error('[VBStat] tapAndScoreThem recordContact failed:', err);
       showToast(`Stat not recorded: ${err?.message ?? err}`, 'error');
     }
   };
 
   const handleAeBlocked = async () => {
     flashJersey();
-    const currentRally = rallyCount;
+    const currentRally = useMatchStore.getState().rallyCount;
     addPoint(SIDE.THEM);
     try {
       const aeId = await recordContact({ player_id: slot.playerId, action: ACTION.ATTACK, result: RESULT.ERROR, error_type: 'blk', rally_number: currentRally });
       recordOppBlock(aeId);
     } catch (err) {
-      console.error('handleAeBlocked recordContact', err);
+      console.error('[VBStat] handleAeBlocked recordContact failed:', err);
       showToast(`Stat not recorded: ${err?.message ?? err}`, 'error');
     }
   };
 
-  const RIPPLE_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e'];
   const tapPass = (rating, scoreThem = false) => {
     if (scoreThem) tapAndScoreThem(ACTION.PASS, String(rating));
     else           tap(ACTION.PASS, String(rating));
     clearTimeout(passRingTimer.current);
     setPassRing(rating);
     passRingTimer.current = setTimeout(() => setPassRing(null), 520);
-    setRippleColor(RIPPLE_COLORS[rating]);
-    setRippleKey((k) => k + 1);
+    if (rating < 3) {
+      clearTimeout(passBadgeTimer.current);
+      setPassBadge({ rating, key: Date.now() });
+      passBadgeTimer.current = setTimeout(() => setPassBadge(null), 750);
+    }
   };
 
   // HBLK visual state for this tile
@@ -206,11 +233,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   );
 
   const tileStats = useMemo(() => {
-    const filtered = committedContacts.filter(
-      (c) => c.player_id === slot.playerId && c.set_id === currentSetId
-    );
-    const stats = computePlayerStats(filtered, 1);
-    const s = stats[slot.playerId];
+    const s = stats;
     if (!s) return { k: 0, ace: 0, se: 0, dig: 0, blk: 0, ae: 0, apr: null };
     return {
       k: s.k, ace: s.ace, se: s.se, dig: s.dig,
@@ -218,13 +241,20 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
       ae: s.ae,
       apr: s.apr != null ? s.apr.toFixed(1) : null,
     };
-  }, [committedContacts, slot.playerId, currentSetId]);
+  }, [stats]);
 
   const passRingClass = passRing === 0 ? 'pass-ring-0'
     : passRing === 1 ? 'pass-ring-1'
     : passRing === 2 ? 'pass-ring-2'
     : passRing === 3 ? 'pass-ring-3'
     : '';
+
+  const topZoneStr = useMemo(() => {
+    if (!zoneHints) return null;
+    const sorted = Object.entries(zoneHints).sort((a, b) => b[1] - a[1]).slice(0, 2);
+    if (!sorted.length) return null;
+    return sorted.map(([z]) => `Z${z}`).join(' · ');
+  }, [zoneHints]);
 
   const tileBg = isServer ? 'bg-orange-950/30' : 'bg-slate-900';
   const tileBorder = isLibero
@@ -235,12 +265,16 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const tileShadow = !isLibero && tileHeat === 'hot'  ? 'shadow-[inset_0_0_12px_rgba(251,146,60,0.08)]'
     : !isLibero && tileHeat === 'cold' ? 'shadow-[inset_0_0_12px_rgba(96,165,250,0.06)]'
     : '';
-  // Libero tile overlay — derived from the jersey color chosen at setup
-  const tileStyle = isLibero ? {
+  // Libero tile overlay — memoized so new object isn't created on every render
+  const tileStyle = useMemo(() => isLibero ? {
     backgroundColor: `${jerseyHex}26`,
     borderColor:     `${jerseyHex}80`,
     boxShadow:       `inset 0 0 14px ${jerseyHex}1a`,
-  } : undefined;
+  } : undefined, [isLibero, jerseyHex]);
+
+  // Libero "L" badge dot style — memoized for same reason
+  const lBadgeStyle  = useMemo(() => ({ width: '2.1vmin', height: '2.1vmin', backgroundColor: jerseyHex }), [jerseyHex]);
+  const lNumberStyle = useMemo(() => ({ fontSize: '1.1vmin', color: numberColor }), [numberColor]);
 
   return (
     <div className={`relative flex flex-col h-full w-full overflow-hidden border
@@ -252,16 +286,20 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
       {/* Libero "L" badge — top-left corner pill */}
       {isLibero && (
         <div className="absolute top-0.5 left-0.5 z-20 flex items-center justify-center rounded-full"
-          style={{ width: '2.1vmin', height: '2.1vmin', backgroundColor: jerseyHex }}>
-          <span className="font-black leading-none" style={{ fontSize: '1.1vmin', color: numberColor }}>L</span>
+          style={lBadgeStyle}>
+          <span className="font-black leading-none" style={lNumberStyle}>L</span>
         </div>
       )}
-      {rippleColor && (
+      {passBadge !== null && (
         <div
-          key={rippleKey}
-          className="pass-ripple absolute inset-0 pointer-events-none z-[5]"
-          style={{ background: rippleColor }}
-        />
+          key={passBadge.key}
+          className="pass-badge-float absolute z-20"
+          style={BADGE_POS_STYLE}
+        >
+          <div style={PASS_BADGE_STYLES[passBadge.rating]}>
+            {['ERROR', '1', '2'][passBadge.rating]}
+          </div>
+        </div>
       )}
 
       {/* ── Player badge strip ── */}
@@ -277,7 +315,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
               <svg
                 aria-hidden
                 className="pointer-events-none absolute"
-                style={{ width: '121%', height: '3.025vmin', top: '50%', left: '-10.5%', transform: 'translateY(-50%)' }}
+                style={JERSEY_SVG_STYLE}
                 viewBox="0 0 100 80"
                 preserveAspectRatio="xMidYMid meet"
                 fill={jerseyHex}
@@ -296,7 +334,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
 
         {/* ── Center: player name ── */}
         <span className={`font-semibold uppercase whitespace-nowrap leading-none text-slate-200${isSubIn ? ' sub-name-enter' : ''}`}>
-          <span style={{ fontSize: '3.15vmin', letterSpacing: '0.06em', fontFamily: 'ui-rounded, system-ui, sans-serif' }}>{fmtPlayerName(slot.playerName, playerNicknames[slot.playerId] ?? '', nameFormat)}</span>
+          <span style={NAME_STYLE}>{fmtPlayerName(slot.playerName, playerNicknames[slot.playerId] ?? '', nameFormat)}</span>
         </span>
         <div className="absolute right-2 flex items-center gap-1">
           {slot.positionLabel && (
@@ -340,10 +378,13 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
         {/* Serve outcome row — FL / TS / ATT / ACE / SE — only visible when this player is serving */}
         {showServeRow && (
           <div className="serve-row-in">
-            <div className="px-[7.5%]">
+            <div className="px-[7.5%] flex items-center justify-between">
               <span className={`text-[1.3vmin] font-bold uppercase tracking-wide leading-none ${sePending ? 'text-red-300' : 'text-slate-500'}`}>
-                {sePending ? 'Serve Error — OB or Net?' : 'Serving'}
+                {sePending ? 'Serve Error — OB, Net, or Foot?' : 'Serving'}
               </span>
+              {!sePending && topZoneStr && (
+                <span className="text-[1.2vmin] font-bold text-amber-400/80 leading-none">★ {topZoneStr}</span>
+              )}
             </div>
             <div className="flex flex-none h-[3.837vmin] py-0 px-[7.5%] gap-[0.5vmin] border-b border-black/30">
               {sePending ? (
@@ -357,7 +398,11 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
                   <Btn label="NET"
                     onTap={() => { tapAndScoreThem(ACTION.SERVE, RESULT.ERROR, { serve_type: serveType, error_type: 'net' }); setServeRecorded(true); setSePending(false); }}
                     cls="bg-rose-950/80 text-rose-300 hover:bg-rose-900/80 serve-unlock-btn"
-                    style={{ animationDelay: '50ms' }} />
+                    style={DELAY_50} />
+                  <Btn label="FOOT"
+                    onTap={() => { tapAndScoreThem(ACTION.SERVE, RESULT.ERROR, { serve_type: serveType, error_type: 'foot' }); setServeRecorded(true); setSePending(false); }}
+                    cls="bg-amber-950/80 text-amber-300 hover:bg-amber-900/80 serve-unlock-btn"
+                    style={DELAY_100} />
                 </>
               ) : (
                 <>
@@ -406,11 +451,11 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
               <Btn label="NET"
                 onTap={() => { tapAndScoreThem(ACTION.ATTACK, RESULT.ERROR, { error_type: 'net' }); setAePending(false); }}
                 cls="bg-rose-950/80 text-rose-300 hover:bg-rose-900/80 serve-unlock-btn"
-                style={{ animationDelay: '50ms' }} />
+                style={DELAY_50} />
               <Btn label="BLK"
                 onTap={() => { handleAeBlocked(); setAePending(false); }}
                 cls="bg-blue-900/80 text-blue-200 hover:bg-blue-800/90 serve-unlock-btn"
-                style={{ animationDelay: '100ms' }} />
+                style={DELAY_100} />
             </>
           ) : (
             <>
@@ -455,10 +500,10 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
         {/* Row 4 — Pass ratings: 0 1 2 3 */}
         <div className="px-[7.5%]"><span className="text-[1.3vmin] font-bold uppercase tracking-wide text-slate-500 leading-none">S/R</span></div>
         <div className="flex flex-none h-[3.837vmin] py-0 px-[7.5%] gap-[0.5vmin] border-b border-black/30">
-          <Btn label="0" onTap={() => tapPass(0, true)}  cls="bg-red-950/80 text-red-300 hover:bg-red-900/80" />
-          <Btn label="1" onTap={() => tapPass(1, false)} cls="bg-yellow-950/80 text-yellow-300 hover:bg-yellow-900/80" />
-          <Btn label="2" onTap={() => tapPass(2, false)} cls="bg-lime-950/80 text-lime-300 hover:bg-lime-900/80" />
-          <Btn label="3" onTap={() => tapPass(3, false)} cls="bg-teal-900/80 text-teal-200 hover:bg-teal-800/90" />
+          <PassBtn rating={0} label="0" onTap={() => tapPass(0, true)}  cls="bg-red-950/80 text-red-300" />
+          <PassBtn rating={1} label="1" onTap={() => tapPass(1, false)} cls="bg-yellow-950/80 text-yellow-300" />
+          <PassBtn rating={2} label="2" onTap={() => tapPass(2, false)} cls="bg-lime-950/80 text-lime-300" />
+          <PassBtn rating={3} label="3" onTap={() => tapPass(3, false)} cls="bg-teal-900/80 text-teal-200" />
         </div>
 
         {/* Row 5 — Penalty errors: L DBL NET BHE (opponent scores) */}
@@ -467,7 +512,8 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
           <Btn label="L"   onTap={() => tapAndScoreThem(ACTION.ERROR, RESULT.LIFT)}                    cls="bg-rose-950/60 text-rose-300 border border-rose-800/50 hover:bg-rose-900/70" />
           <Btn label="DBL" onTap={() => tapAndScoreThem(ACTION.ERROR, RESULT.DOUBLE)}                  cls="bg-rose-950/60 text-rose-300 border border-rose-800/50 hover:bg-rose-900/70" />
           <Btn label="NET" onTap={() => tapAndScoreThem(ACTION.ERROR, RESULT.NET_TOUCH)}               cls="bg-rose-950/60 text-rose-300 border border-rose-800/50 hover:bg-rose-900/70" />
-          <Btn label="BHE" onTap={() => tapAndScoreThem(ACTION.SET,   RESULT.BALL_HANDLING_ERROR)}     cls="bg-rose-950/60 text-rose-300 border border-rose-800/50 hover:bg-rose-900/70" />
+          <Btn label="BHE" onTap={() => tapAndScoreThem(ACTION.SET,               RESULT.BALL_HANDLING_ERROR)} cls="bg-rose-950/60 text-rose-300 border border-rose-800/50 hover:bg-rose-900/70" />
+          <Btn label="FBE" onTap={() => tapAndScoreThem(ACTION.FREEBALL_RECEIVE,  RESULT.FREE_BALL_ERROR)}     cls="bg-rose-950/60 text-rose-300 border border-rose-800/50 hover:bg-rose-900/70" />
         </div>
 
       </div>

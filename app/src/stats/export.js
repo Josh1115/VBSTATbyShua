@@ -104,7 +104,7 @@ function addPageHeader(doc, title, subtitle) {
   doc.text(subtitle, 14, 22);
 }
 
-export function exportMatchPDF(matchMeta, playerStats, teamStats, rotationStats, playerNames, filename = 'match-stats.pdf') {
+export function exportMatchPDF(matchMeta, playerStats, teamStats, rotationStats, playerNames, perSetStats = [], filename = 'match-stats.pdf') {
   // Use A4 for non-US locales, letter for US
   const pdfFormat = (navigator.language ?? '').startsWith('en-US') ? 'letter' : 'a4';
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: pdfFormat });
@@ -181,7 +181,59 @@ export function exportMatchPDF(matchMeta, playerStats, teamStats, rotationStats,
     theme: 'grid',
   });
 
-  // ── Page 3: Rotation analysis ────────────────────────────────────────────────
+  // ── Pages 3+: Per-set player stats ──────────────────────────────────────────
+  for (const { set, players, team } of perSetStats) {
+    doc.addPage();
+    const setScore = `${set.our_score ?? 0} – ${set.opp_score ?? 0}`;
+    addPageHeader(doc, `Set ${set.set_number} Statistics`, `${title}  ·  ${setScore}`);
+
+    // Set team totals
+    autoTable(doc, {
+      startY: 35,
+      head: [['', 'SA', 'ACE', 'ACE%', 'K', 'HIT%', 'AST', 'BS', 'DIG']],
+      body: [[
+        'Team',
+        fmtCount(team.sa),
+        fmtCount(team.ace),
+        fmtPct(team.ace_pct),
+        fmtCount(team.k),
+        fmtHitting(team.hit_pct),
+        fmtCount(team.ast),
+        fmtCount(team.bs),
+        fmtCount(team.dig),
+      ]],
+      styles: { fillColor: SURFACE, textColor: WHITE, fontSize: 9 },
+      headStyles: { fillColor: [60, 80, 100], textColor: WHITE, fontStyle: 'bold' },
+      theme: 'grid',
+    });
+
+    // Per-set player rows
+    const setRows = playerRows(players, playerNames);
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 6,
+      head: [['Player', 'SA', 'ACE', 'ACE%', 'REC', 'APR', 'TA', 'K', 'HIT%', 'BS', 'BA', 'DIG']],
+      body: setRows.map((r) => [
+        r.name,
+        fmtCount(r.sa),
+        fmtCount(r.ace),
+        fmtPct(r.ace_pct),
+        fmtCount(r.pa),
+        fmtPassRating(r.apr),
+        fmtCount(r.ta),
+        fmtCount(r.k),
+        fmtHitting(r.hit_pct),
+        fmtCount(r.bs),
+        fmtCount(r.ba),
+        fmtCount(r.dig),
+      ]),
+      styles: { fillColor: SURFACE, textColor: WHITE, fontSize: 8 },
+      headStyles: { fillColor: PRIMARY, textColor: WHITE, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: DARK },
+      theme: 'grid',
+    });
+  }
+
+  // ── Rotation analysis ────────────────────────────────────────────────────────
   doc.addPage();
   addPageHeader(doc, 'Rotation Analysis', title);
 
