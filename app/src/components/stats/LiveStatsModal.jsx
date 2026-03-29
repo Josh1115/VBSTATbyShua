@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useMatchStore } from '../../store/matchStore';
 import { useMatchStats } from '../../hooks/useMatchStats';
 import { db } from '../../db/schema';
-import { computeTeamStats, computeOppDisplayStats, computeRotationStats, computeRotationContactStats, computeISvsOOS, computeFreeDigWin, computeTransitionAttack, computePlayerStats } from '../../stats/engine';
+import { computeTeamStats, computeOppDisplayStats, computeRotationStats, computeRotationContactStats, computeISvsOOS, computeFreeDigWin, computeTransitionAttack, computePlayerStats, computeXKByPassRating } from '../../stats/engine';
 import { StatTable } from './StatTable';
 import { PointQualityPanel } from './PointQualityPanel';
 import { computeMilestone } from '../../hooks/useRecordAlerts';
@@ -997,6 +997,11 @@ export const LiveStatsModal = memo(function LiveStatsModal({ open, onClose, team
     [allMatchContacts, setNumber, fullPositionMap]
   );
 
+  const xkByPlayer = useMemo(
+    () => computeXKByPassRating(committedContacts),
+    [committedContacts]
+  );
+
   const matchTeamStats = useMemo(
     () => computeTeamStats(allMatchContacts ?? [], setNumber),
     [allMatchContacts, setNumber]
@@ -1345,6 +1350,66 @@ export const LiveStatsModal = memo(function LiveStatsModal({ open, onClose, team
                           matchPlayerStats={matchPlayerStats}
                           positionMap={fullPositionMap}
                         />
+                        {(() => {
+                          const nameMap = Object.fromEntries((roster ?? []).map(p => [String(p.id), p.name]));
+                          const xkRows = Object.entries(xkByPlayer)
+                            .filter(([, x]) => (x.xk1_ta ?? 0) > 0 || (x.xk2_ta ?? 0) > 0 || (x.xk3_ta ?? 0) > 0)
+                            .map(([pid, x]) => ({ pid, name: nameMap[pid] ?? `#${pid}`, ...x }));
+                          if (!xkRows.length) return null;
+                          const cell = 'px-2 py-1.5 text-right tabular-nums text-slate-300';
+                          return (
+                            <div className="px-4 pb-4 space-y-3">
+                              {/* xK% */}
+                              <div className="bg-slate-800/60 rounded-xl p-3">
+                                <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Kill% by Pass Rating (xK%)</p>
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="border-b border-slate-700">
+                                      <th className="px-2 py-1.5 text-left font-semibold text-slate-400">Player</th>
+                                      <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK1%</th>
+                                      <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK2%</th>
+                                      <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK3%</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {xkRows.map((r, i) => (
+                                      <tr key={r.pid} className={`border-b border-slate-800/60 ${i % 2 !== 0 ? 'bg-slate-900/30' : ''}`}>
+                                        <td className="px-2 py-1.5 text-slate-300">{r.name}</td>
+                                        <td className={cell}>{r.xk1 != null ? fmtPct(r.xk1) : '—'}</td>
+                                        <td className={cell}>{r.xk2 != null ? fmtPct(r.xk2) : '—'}</td>
+                                        <td className={cell}>{r.xk3 != null ? fmtPct(r.xk3) : '—'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                              {/* xHIT% */}
+                              <div className="bg-slate-800/60 rounded-xl p-3">
+                                <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Hit% by Pass Rating (xHIT%)</p>
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="border-b border-slate-700">
+                                      <th className="px-2 py-1.5 text-left font-semibold text-slate-400">Player</th>
+                                      <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT1</th>
+                                      <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT2</th>
+                                      <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT3</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {xkRows.map((r, i) => (
+                                      <tr key={r.pid} className={`border-b border-slate-800/60 ${i % 2 !== 0 ? 'bg-slate-900/30' : ''}`}>
+                                        <td className="px-2 py-1.5 text-slate-300">{r.name}</td>
+                                        <td className={cell}>{r.xhit1 != null ? fmtHitting(r.xhit1) : '—'}</td>
+                                        <td className={cell}>{r.xhit2 != null ? fmtHitting(r.xhit2) : '—'}</td>
+                                        <td className={cell}>{r.xhit3 != null ? fmtHitting(r.xhit3) : '—'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </>

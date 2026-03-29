@@ -5,7 +5,8 @@ import { db } from '../db/schema';
 import { computeMatchStats,
          computePlayerStats, computeTeamStats, computeRotationStats, computePointQuality,
          computeServeZoneStats, computeISvsOOS, computeTransitionAttack,
-         computePQ, computeSetWinProb, computeMatchWinProb } from '../stats/engine';
+         computePQ, computeSetWinProb, computeMatchWinProb,
+         computeXKByPassRating } from '../stats/engine';
 import { getRalliesForMatch } from '../stats/queries';
 import { exportMatchCSV, exportMatchPDF, exportMaxPrepsCSV } from '../stats/export';
 import { fmtHitting, fmtPassRating, fmtPct, fmtCount, fmtDate } from '../stats/formatters';
@@ -471,6 +472,27 @@ export function MatchSummaryPage() {
     [displayStats, playerNames]
   );
 
+  const xkTeam = useMemo(() => {
+    const contacts = displayStats?.contacts ?? [];
+    const xkByPlayer = computeXKByPassRating(contacts);
+    const totals = { '1': { ta: 0, k: 0, ae: 0 }, '2': { ta: 0, k: 0, ae: 0 }, '3': { ta: 0, k: 0, ae: 0 } };
+    for (const x of Object.values(xkByPlayer)) {
+      for (const r of ['1', '2', '3']) {
+        totals[r].ta += x[`xk${r}_ta`] ?? 0;
+        totals[r].k  += x[`xk${r}_k`]  ?? 0;
+        totals[r].ae += x[`xk${r}_ae`] ?? 0;
+      }
+    }
+    return {
+      xk1:   totals['1'].ta > 0 ? totals['1'].k / totals['1'].ta : null,
+      xk2:   totals['2'].ta > 0 ? totals['2'].k / totals['2'].ta : null,
+      xk3:   totals['3'].ta > 0 ? totals['3'].k / totals['3'].ta : null,
+      xhit1: totals['1'].ta > 0 ? (totals['1'].k - totals['1'].ae) / totals['1'].ta : null,
+      xhit2: totals['2'].ta > 0 ? (totals['2'].k - totals['2'].ae) / totals['2'].ta : null,
+      xhit3: totals['3'].ta > 0 ? (totals['3'].k - totals['3'].ae) / totals['3'].ta : null,
+    };
+  }, [displayStats]);
+
   const statTotals = useMemo(() => {
     if (!playerRows.length) return null;
     const sum = (key) => playerRows.reduce((acc, r) => acc + (r[key] ?? 0), 0);
@@ -758,6 +780,26 @@ export function MatchSummaryPage() {
                   teamName={match?.team_name}
                   opponentName={match?.opponent_name}
                 />
+                {(xkTeam.xk1 != null || xkTeam.xk2 != null || xkTeam.xk3 != null) && (
+                  <div className="bg-surface rounded-xl p-3">
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Attack by Pass Rating</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: 'xK1%',  val: fmtPct(xkTeam.xk1)       },
+                        { label: 'xK2%',  val: fmtPct(xkTeam.xk2)       },
+                        { label: 'xK3%',  val: fmtPct(xkTeam.xk3)       },
+                        { label: 'xHIT1', val: fmtHitting(xkTeam.xhit1)  },
+                        { label: 'xHIT2', val: fmtHitting(xkTeam.xhit2)  },
+                        { label: 'xHIT3', val: fmtHitting(xkTeam.xhit3)  },
+                      ].map(({ label, val }) => (
+                        <div key={label} className="bg-slate-800/60 rounded-lg p-2 text-center">
+                          <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">{label}</div>
+                          <div className="text-lg font-black text-primary mt-0.5">{val}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -906,6 +948,72 @@ export function MatchSummaryPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Kill% by Pass Rating (xK%) */}
+                {(() => {
+                  const xkRows = playerRows.filter(r => (r.xk1_ta ?? 0) > 0 || (r.xk2_ta ?? 0) > 0 || (r.xk3_ta ?? 0) > 0);
+                  if (!xkRows.length) return null;
+                  return (
+                    <div className="bg-surface rounded-xl p-3">
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Kill% by Pass Rating (xK%)</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-700">
+                              <th className="px-2 py-1.5 text-left font-semibold text-slate-400">Player</th>
+                              <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK1%</th>
+                              <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK2%</th>
+                              <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK3%</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {xkRows.map((r, i) => (
+                              <tr key={r.id} className={`border-b border-slate-800/60 ${i % 2 !== 0 ? 'bg-slate-900/30' : ''}`}>
+                                <td className="px-2 py-1.5 text-slate-300">{r.name}</td>
+                                <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xk1 != null ? fmtPct(r.xk1) : '—'}</td>
+                                <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xk2 != null ? fmtPct(r.xk2) : '—'}</td>
+                                <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xk3 != null ? fmtPct(r.xk3) : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Hit% by Pass Rating (xHIT%) */}
+                {(() => {
+                  const xhitRows = playerRows.filter(r => (r.xk1_ta ?? 0) > 0 || (r.xk2_ta ?? 0) > 0 || (r.xk3_ta ?? 0) > 0);
+                  if (!xhitRows.length) return null;
+                  return (
+                    <div className="bg-surface rounded-xl p-3">
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Hit% by Pass Rating (xHIT%)</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-700">
+                              <th className="px-2 py-1.5 text-left font-semibold text-slate-400">Player</th>
+                              <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT1</th>
+                              <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT2</th>
+                              <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT3</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {xhitRows.map((r, i) => (
+                              <tr key={r.id} className={`border-b border-slate-800/60 ${i % 2 !== 0 ? 'bg-slate-900/30' : ''}`}>
+                                <td className="px-2 py-1.5 text-slate-300">{r.name}</td>
+                                <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xhit1 != null ? fmtHitting(r.xhit1) : '—'}</td>
+                                <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xhit2 != null ? fmtHitting(r.xhit2) : '—'}</td>
+                                <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xhit3 != null ? fmtHitting(r.xhit3) : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

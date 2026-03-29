@@ -4,7 +4,7 @@ import { buildPlayerMaps } from '../utils/players';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { getIntStorage, STORAGE_KEYS } from '../utils/storage';
 import { db } from '../db/schema';
-import { computeSeasonStats, computePQ, computeSetWinProb } from '../stats/engine';
+import { computeSeasonStats, computePQ, computeSetWinProb, computeXKByPassRating } from '../stats/engine';
 import { fmtHitting, fmtPassRating, fmtPct, fmtCount, fmtVER } from '../stats/formatters';
 import { VERBadge } from '../components/stats/VERBadge';
 import { ROTATION_COLS, SERVING_COLS, TAB_COLUMNS } from '../stats/columns';
@@ -28,6 +28,7 @@ const TABS = [
   { value: 'rotation', label: 'Rotation Analysis'  },
   { value: 'trends',   label: 'Trends'             },
   { value: 'heatmap',  label: 'Heat Map'           },
+  { value: 'oppo',     label: 'Opp Stats'          },
 ];
 const TAB_VALUES = TABS.map(t => t.value);
 
@@ -291,6 +292,27 @@ export function ReportsPage() {
       : [],
     [stats, playerNames]
   );
+
+  const xkByPlayer = useMemo(() => computeXKByPassRating(contacts), [contacts]);
+
+  const xkTeam = useMemo(() => {
+    const totals = { '1': { ta: 0, k: 0, ae: 0 }, '2': { ta: 0, k: 0, ae: 0 }, '3': { ta: 0, k: 0, ae: 0 } };
+    for (const x of Object.values(xkByPlayer)) {
+      for (const r of ['1', '2', '3']) {
+        totals[r].ta += x[`xk${r}_ta`] ?? 0;
+        totals[r].k  += x[`xk${r}_k`]  ?? 0;
+        totals[r].ae += x[`xk${r}_ae`] ?? 0;
+      }
+    }
+    return {
+      xk1:   totals['1'].ta > 0 ? totals['1'].k / totals['1'].ta : null,
+      xk2:   totals['2'].ta > 0 ? totals['2'].k / totals['2'].ta : null,
+      xk3:   totals['3'].ta > 0 ? totals['3'].k / totals['3'].ta : null,
+      xhit1: totals['1'].ta > 0 ? (totals['1'].k - totals['1'].ae) / totals['1'].ta : null,
+      xhit2: totals['2'].ta > 0 ? (totals['2'].k - totals['2'].ae) / totals['2'].ta : null,
+      xhit3: totals['3'].ta > 0 ? (totals['3'].k - totals['3'].ae) / totals['3'].ta : null,
+    };
+  }, [xkByPlayer]);
 
   const playerTotalsRow = useMemo(() => {
     if (!stats?.team) return null;
@@ -564,6 +586,28 @@ export function ReportsPage() {
                   ))}
                 </div>
 
+                {/* xK% & xHIT% by Pass Rating */}
+                {(xkTeam.xk1 != null || xkTeam.xk2 != null || xkTeam.xk3 != null) && (
+                  <div>
+                    <SectionHeader>Attack by Pass Rating</SectionHeader>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[
+                        { label: 'xK1%',  val: fmtPct(xkTeam.xk1)      },
+                        { label: 'xK2%',  val: fmtPct(xkTeam.xk2)      },
+                        { label: 'xK3%',  val: fmtPct(xkTeam.xk3)      },
+                        { label: 'xHIT1', val: fmtHitting(xkTeam.xhit1) },
+                        { label: 'xHIT2', val: fmtHitting(xkTeam.xhit2) },
+                        { label: 'xHIT3', val: fmtHitting(xkTeam.xhit3) },
+                      ].map(({ label, val }) => (
+                        <div key={label} className="bg-surface rounded-lg px-1 py-1 text-center">
+                          <div className="text-[10px] text-slate-400 leading-none">{label}</div>
+                          <div className="text-base font-bold text-primary mt-0.5 leading-none">{val}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Point Quality — mirrors the Scoring tab in Match Summary */}
                 {stats.pointQuality && (
                   <PointQualityPanel pq={stats.pointQuality} oppScored={stats.oppScored} />
@@ -729,7 +773,69 @@ export function ReportsPage() {
                   <StatTable columns={TAB_COLUMNS.passing} rows={playerRows} totalsRow={playerTotalsRow} />
                 )}
                 {playerStatView === 'attacking' && (
-                  <StatTable columns={TAB_COLUMNS.attacking} rows={playerRows} totalsRow={playerTotalsRow} />
+                  <>
+                    <StatTable columns={TAB_COLUMNS.attacking} rows={playerRows} totalsRow={playerTotalsRow} />
+                    {(() => {
+                      const xkRows = Object.entries(xkByPlayer)
+                        .filter(([, x]) => (x.xk1_ta ?? 0) > 0 || (x.xk2_ta ?? 0) > 0 || (x.xk3_ta ?? 0) > 0)
+                        .map(([pid, x]) => ({ pid, name: playerNames[pid] ?? `#${pid}`, ...x }));
+                      if (!xkRows.length) return null;
+                      return (
+                        <>
+                          <div className="bg-surface rounded-xl p-3">
+                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Kill% by Pass Rating (xK%)</p>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="border-b border-slate-700">
+                                    <th className="px-2 py-1.5 text-left font-semibold text-slate-400">Player</th>
+                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK1%</th>
+                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK2%</th>
+                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK3%</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {xkRows.map((r, i) => (
+                                    <tr key={r.pid} className={`border-b border-slate-800/60 ${i % 2 !== 0 ? 'bg-slate-900/30' : ''}`}>
+                                      <td className="px-2 py-1.5 text-slate-300">{r.name}</td>
+                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xk1 != null ? fmtPct(r.xk1) : '—'}</td>
+                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xk2 != null ? fmtPct(r.xk2) : '—'}</td>
+                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xk3 != null ? fmtPct(r.xk3) : '—'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                          <div className="bg-surface rounded-xl p-3">
+                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Hit% by Pass Rating (xHIT%)</p>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="border-b border-slate-700">
+                                    <th className="px-2 py-1.5 text-left font-semibold text-slate-400">Player</th>
+                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT1</th>
+                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT2</th>
+                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT3</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {xkRows.map((r, i) => (
+                                    <tr key={r.pid} className={`border-b border-slate-800/60 ${i % 2 !== 0 ? 'bg-slate-900/30' : ''}`}>
+                                      <td className="px-2 py-1.5 text-slate-300">{r.name}</td>
+                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xhit1 != null ? fmtHitting(r.xhit1) : '—'}</td>
+                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xhit2 != null ? fmtHitting(r.xhit2) : '—'}</td>
+                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{r.xhit3 != null ? fmtHitting(r.xhit3) : '—'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </>
                 )}
                 {playerStatView === 'blocking' && (
                   <StatTable columns={TAB_COLUMNS.blocking} rows={playerRows} totalsRow={playerTotalsRow} />
@@ -798,6 +904,29 @@ export function ReportsPage() {
             {/* ── Heat Map ─────────────────────────────────────────────── */}
             {tab === 'heatmap' && (
               <CourtHeatMap contacts={contacts} />
+            )}
+
+            {/* ── Opp Stats ────────────────────────────────────────────── */}
+            {tab === 'oppo' && stats?.opp && (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-400 mb-4">Opponent performance across selected matches</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'ACE',  val: stats.opp.ace,  desc: 'Aces vs us'          },
+                    { label: 'SE',   val: stats.opp.se,   desc: 'Serve errors'         },
+                    { label: 'K',    val: stats.opp.k,    desc: 'Kills'                },
+                    { label: 'AE',   val: stats.opp.ae,   desc: 'Attack errors'        },
+                    { label: 'BLK',  val: stats.opp.blk,  desc: 'Blocked by us'        },
+                    { label: 'ERR',  val: stats.opp.errs, desc: 'Ball handling errors' },
+                  ].map(({ label, val, desc }) => (
+                    <div key={label} className="bg-surface rounded-xl p-3 text-center">
+                      <div className="text-xs text-slate-400 mb-1">{desc}</div>
+                      <div className="text-2xl font-black text-primary">{val}</div>
+                      <div className="text-xs font-bold text-slate-300 mt-0.5">{label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         </>

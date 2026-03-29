@@ -634,6 +634,56 @@ export function computePointQuality(contacts) {
   };
 }
 
+/**
+ * Kill% and Hit% by pass rating (xK%, xHIT%) — per attacker.
+ * For each rally containing a rated pass (1/2/3), finds the first attack
+ * by any of our players after that pass and tracks k/ae/ta per rating.
+ * Returns { [playerId]: { xk1, xk1_ta, xk2, xk2_ta, xk3, xk3_ta,
+ *                         xhit1, xhit2, xhit3 } }
+ */
+export function computeXKByPassRating(contacts) {
+  const byRally = new Map();
+  for (const c of contacts) {
+    if (c.opponent_contact) continue;
+    const key = `${c.set_id}:${c.rally_number}`;
+    if (!byRally.has(key)) byRally.set(key, []);
+    byRally.get(key).push(c);
+  }
+
+  const acc = {};
+  for (const rallyContacts of byRally.values()) {
+    const sorted = rallyContacts.slice().sort((a, b) => (a.timestamp ?? a.id ?? 0) - (b.timestamp ?? b.id ?? 0));
+
+    const passContact = sorted.find(c => c.action === 'pass' && ['1', '2', '3'].includes(String(c.result)));
+    if (!passContact) continue;
+
+    const rating = String(passContact.result);
+    const passIdx = sorted.indexOf(passContact);
+    const firstAttack = sorted.slice(passIdx + 1).find(c => c.action === 'attack' && c.player_id);
+    if (!firstAttack) continue;
+
+    const pid = String(firstAttack.player_id);
+    acc[pid] ??= { '1': { ta: 0, k: 0, ae: 0 }, '2': { ta: 0, k: 0, ae: 0 }, '3': { ta: 0, k: 0, ae: 0 } };
+    acc[pid][rating].ta++;
+    if (firstAttack.result === 'kill')  acc[pid][rating].k++;
+    if (firstAttack.result === 'error') acc[pid][rating].ae++;
+  }
+
+  const result = {};
+  for (const [pid, ratings] of Object.entries(acc)) {
+    result[pid] = {};
+    for (const r of ['1', '2', '3']) {
+      const { ta, k, ae } = ratings[r];
+      result[pid][`xk${r}_ta`]  = ta;
+      result[pid][`xk${r}_k`]   = k;
+      result[pid][`xk${r}_ae`]  = ae;
+      result[pid][`xk${r}`]     = ta > 0 ? k / ta : null;
+      result[pid][`xhit${r}`]   = ta > 0 ? (k - ae) / ta : null;
+    }
+  }
+  return result;
+}
+
 // ── Async convenience (report mode) ────────────────────────────────────────
 
 /**
@@ -648,8 +698,13 @@ export async function computeMatchStats(matchId) {
     getPlayerPositionsForMatches([matchId]),
   ]);
   const rallyMap = buildRallyMap(rallies);
+  const players = computePlayerStats(contacts, setsPlayed, playerPositions);
+  const xkStats = computeXKByPassRating(contacts);
+  for (const [pid, xk] of Object.entries(xkStats)) {
+    if (players[pid]) Object.assign(players[pid], xk);
+  }
   return {
-    players:          computePlayerStats(contacts, setsPlayed, playerPositions),
+    players,
     team:             computeTeamStats(contacts, setsPlayed),
     opp:              computeOppDisplayStats(contacts),
     serveZones:       computeServeZoneStats(contacts),
@@ -695,9 +750,15 @@ export async function computeSeasonStats(seasonId, filters = {}) {
   const setsPlayed = Object.values(setsPerMatch).reduce((a, b) => a + b, 0);
 
   const rallyMap = buildRallyMap(rallies);
+  const players = computePlayerStats(contacts, setsPlayed, playerPositions);
+  const xkStats = computeXKByPassRating(contacts);
+  for (const [pid, xk] of Object.entries(xkStats)) {
+    if (players[pid]) Object.assign(players[pid], xk);
+  }
   return {
-    players:          computePlayerStats(contacts, setsPlayed, playerPositions),
+    players,
     team:             computeTeamStats(contacts, setsPlayed),
+    opp:              computeOppDisplayStats(contacts),
     rotation:         computeRotationStats(rallies),
     freeball:         computeFreeballOutcomes(contacts, rallies, rallyMap),
     isOos:            computeISvsOOS(contacts, rallies, rallyMap),

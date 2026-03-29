@@ -242,7 +242,7 @@ function SessionView({ players: initPlayers, teamId }) {
                   <span className="font-semibold text-sm">{player.name.split(' ').pop()}</span>
                 </div>
                 <div className="text-right flex-shrink-0 ml-1">
-                  <span className="text-lg font-black font-mono text-primary">{apr ?? '—'}</span>
+                  <span className="text-lg font-black font-mono text-primary">{apr != null ? apr.toFixed(2) : '—'}</span>
                   <span className="text-[10px] text-slate-500 ml-0.5">/{player.passes.length}</span>
                 </div>
               </div>
