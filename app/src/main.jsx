@@ -4,6 +4,7 @@ import './index.css';
 import App from './App.jsx';
 import { seedDevData, patchSeedPositions } from './db/seeds.js';
 import { STORAGE_KEYS, getBoolStorage, getStorageItem } from './utils/storage.js';
+import { ACCENT_COLORS } from './constants/index.js';
 
 // Apply persisted AMOLED mode before first render to avoid flash
 if (getBoolStorage(STORAGE_KEYS.AMOLED)) {
@@ -12,15 +13,8 @@ if (getBoolStorage(STORAGE_KEYS.AMOLED)) {
 
 // Apply persisted accent color before first render
 {
-  const ACCENTS = {
-    orange: { hex: '#f97316', rgb: '249 115 22' },
-    blue:   { hex: '#3b82f6', rgb: '59 130 246' },
-    green:  { hex: '#22c55e', rgb: '34 197 94'  },
-    red:    { hex: '#ef4444', rgb: '239 68 68'  },
-    purple: { hex: '#a855f7', rgb: '168 85 247' },
-  };
   const saved = getStorageItem(STORAGE_KEYS.ACCENT, 'orange');
-  const c = ACCENTS[saved] ?? ACCENTS.orange;
+  const c = ACCENT_COLORS.find((a) => a.id === saved) ?? ACCENT_COLORS[0];
   document.documentElement.style.setProperty('--color-primary', c.hex);
   document.documentElement.style.setProperty('--color-primary-rgb', c.rgb);
 }

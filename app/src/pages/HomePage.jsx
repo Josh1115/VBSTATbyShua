@@ -5,7 +5,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { MATCH_STATUS } from '../constants';
 import { fmtDate } from '../stats/formatters';
-import { computePlayerStats } from '../stats/engine';
+import { computePlayerStats, computeTeamStats } from '../stats/engine';
+import { deleteMatch } from '../stats/queries';
 import { Button } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -28,18 +29,6 @@ function fmtSetScores(sets) {
   return sets.map((s) => `${s.our_score ?? 0}-${s.opp_score ?? 0}`).join(' · ');
 }
 
-async function deleteMatch(matchId) {
-  const sets = await db.sets.where('match_id').equals(matchId).toArray();
-  const setIds = sets.map((s) => s.id);
-  await Promise.all([
-    db.contacts.where('match_id').equals(matchId).delete(),
-    db.rallies.where('set_id').anyOf(setIds).delete(),
-    db.lineups.where('set_id').anyOf(setIds).delete(),
-    db.substitutions.where('set_id').anyOf(setIds).delete(),
-  ]);
-  await db.sets.where('match_id').equals(matchId).delete();
-  await db.matches.delete(matchId);
-}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -185,6 +174,7 @@ export function HomePage() {
       }
       return best;
     };
+    const ts = computeTeamStats(contacts);
     return {
       kills:   findLeader(ps => ps.k   ?? 0),
       aces:    findLeader(ps => ps.ace  ?? 0),
@@ -193,6 +183,15 @@ export function HomePage() {
       assists: findLeader(ps => ps.ast  ?? 0),
       rec:     findLeader(ps => ps.pa  ?? 0),
       apr:     findLeader(ps => (ps.pa ?? 0) >= 10 ? (ps.apr ?? 0) : 0),
+      teamTotals: {
+        k:   ts.k,
+        ace: ts.ace,
+        blk: (ts.bs ?? 0) + (ts.ba ?? 0),
+        dig: ts.dig,
+        ast: ts.ast,
+        rec: ts.pa,
+        apr: ts.apr,
+      },
     };
   }, [defaultTeamId, defaultSeasonId]);
 
@@ -515,17 +514,18 @@ export function HomePage() {
         {/* ── Season Leaders ── */}
         {(seasonRecord || seasonLeaders) && (() => {
           const LEADERS = [
-            { label: 'K',   key: 'kills'   },
-            { label: 'ACE', key: 'aces'    },
-            { label: 'BLK', key: 'blocks'  },
-            { label: 'DIG', key: 'digs'    },
-            { label: 'AST', key: 'assists' },
-            { label: 'REC', key: 'rec'     },
-            { label: 'APR', key: 'apr',    fmt: v => Number(v).toFixed(2) },
+            { label: 'K',   key: 'kills',   ttKey: 'k'   },
+            { label: 'ACE', key: 'aces',    ttKey: 'ace' },
+            { label: 'BLK', key: 'blocks',  ttKey: 'blk' },
+            { label: 'DIG', key: 'digs',    ttKey: 'dig' },
+            { label: 'AST', key: 'assists', ttKey: 'ast' },
+            { label: 'REC', key: 'rec',     ttKey: 'rec' },
+            { label: 'APR', key: 'apr',     ttKey: 'apr', fmt: v => Number(v).toFixed(2) },
           ];
+          const tt = seasonLeaders?.teamTotals;
           return (
-            <div className="animate-slide-up-fade" style={{ animationDelay: '250ms' }}>
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2 px-0.5">Season Leaders</p>
+            <div className="animate-slide-up-fade space-y-2" style={{ animationDelay: '250ms' }}>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 px-0.5">Season Leaders</p>
               <div className="grid grid-cols-7 gap-2">
                 {LEADERS.map(({ label, key, fmt }) => {
                   const leader = seasonLeaders?.[key];
@@ -540,6 +540,20 @@ export function HomePage() {
                       ) : (
                         <span className="text-xl font-black text-slate-600 leading-none">—</span>
                       )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 px-0.5">Team Totals</p>
+              <div className="grid grid-cols-7 gap-2">
+                {LEADERS.map(({ label, ttKey, fmt }) => {
+                  const teamVal = tt?.[ttKey];
+                  return (
+                    <div key={ttKey} className="bg-surface rounded-xl p-2 text-center flex flex-col items-center gap-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">{label}</span>
+                      <span className="text-xl font-black text-slate-300 tabular-nums leading-none">
+                        {teamVal != null ? (fmt ? fmt(teamVal) : teamVal) : '—'}
+                      </span>
                     </div>
                   );
                 })}

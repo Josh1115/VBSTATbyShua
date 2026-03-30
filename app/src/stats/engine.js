@@ -750,10 +750,14 @@ export async function computeSeasonStats(seasonId, filters = {}) {
 
   const totalMatchCount = matches.length;
 
-  if (filters.matchIds?.length) matches = matches.filter(m => filters.matchIds.includes(m.id));
-  if (filters.conference) matches = matches.filter(m => m.conference === filters.conference);
-  if (filters.location)   matches = matches.filter(m => m.location   === filters.location);
-  if (filters.matchType)  matches = matches.filter(m => m.match_type === filters.matchType);
+  if (filters.matchIds?.length || filters.conference || filters.location || filters.matchType) {
+    matches = matches.filter(m =>
+      (!filters.matchIds?.length || filters.matchIds.includes(m.id)) &&
+      (!filters.conference       || m.conference === filters.conference) &&
+      (!filters.location         || m.location   === filters.location)  &&
+      (!filters.matchType        || m.match_type === filters.matchType)
+    );
+  }
 
   if (!matches.length) return { empty: true, totalMatchCount };
 

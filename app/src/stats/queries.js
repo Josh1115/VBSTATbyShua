@@ -108,3 +108,17 @@ export const getPlayerPositionsForMatches = async (matchIds) => {
     ])
   );
 };
+
+// Cascade-delete a match and all dependent records
+export async function deleteMatch(matchId) {
+  const sets   = await db.sets.where('match_id').equals(matchId).toArray();
+  const setIds = sets.map((s) => s.id);
+  await Promise.all([
+    db.contacts.where('match_id').equals(matchId).delete(),
+    db.rallies.where('set_id').anyOf(setIds).delete(),
+    db.lineups.where('set_id').anyOf(setIds).delete(),
+    db.substitutions.where('set_id').anyOf(setIds).delete(),
+  ]);
+  await db.sets.where('match_id').equals(matchId).delete();
+  await db.matches.delete(matchId);
+}

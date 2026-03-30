@@ -72,10 +72,8 @@ function ServeReceiveDetail({ data }) {
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">Player Breakdown</p>
         <div className="space-y-2">
           {players.map((p) => {
-            const p0 = p.passes.filter((v) => v === 0).length;
-            const p1 = p.passes.filter((v) => v === 1).length;
-            const p2 = p.passes.filter((v) => v === 2).length;
-            const p3 = p.passes.filter((v) => v === 3).length;
+            const tally = p.passes.reduce((acc, v) => { acc[v] = (acc[v] ?? 0) + 1; return acc; }, {});
+            const [p0, p1, p2, p3] = [tally[0] ?? 0, tally[1] ?? 0, tally[2] ?? 0, tally[3] ?? 0];
             return (
               <div key={p.id} className="bg-slate-800 rounded-xl px-3 py-2">
                 <div className="flex items-center justify-between mb-1">

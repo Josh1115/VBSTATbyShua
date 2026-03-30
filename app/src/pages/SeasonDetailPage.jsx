@@ -6,24 +6,13 @@ import { MATCH_STATUS } from '../constants';
 import { fmtDate } from '../stats/formatters';
 import { computeMatchStats } from '../stats/engine';
 import { exportMaxPrepsCSV } from '../stats/export';
+import { deleteMatch } from '../stats/queries';
 import { PageHeader } from '../components/layout/PageHeader';
 import { Button } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { SwipeableMatchCard } from '../components/ui/SwipeableMatchCard';
 
-async function deleteMatch(matchId) {
-  const sets = await db.sets.where('match_id').equals(matchId).toArray();
-  const setIds = sets.map((s) => s.id);
-  await Promise.all([
-    db.contacts.where('match_id').equals(matchId).delete(),
-    db.rallies.where('set_id').anyOf(setIds).delete(),
-    db.lineups.where('set_id').anyOf(setIds).delete(),
-    db.substitutions.where('set_id').anyOf(setIds).delete(),
-  ]);
-  await db.sets.where('match_id').equals(matchId).delete();
-  await db.matches.delete(matchId);
-}
 
 export function SeasonDetailPage() {
   const { seasonId } = useParams();

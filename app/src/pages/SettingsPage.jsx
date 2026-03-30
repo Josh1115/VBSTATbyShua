@@ -7,7 +7,7 @@ import { useInstallPrompt } from '../hooks/useInstallPrompt';
 import { exportBackup, importBackup } from '../stats/backup';
 import { db } from '../db/schema';
 import { useUiStore } from '../store/uiStore';
-import { FORMAT } from '../constants';
+import { FORMAT, ACCENT_COLORS } from '../constants';
 import {
   getStorageItem, setStorageItem,
   getBoolStorage, setBoolStorage,
@@ -32,13 +32,6 @@ const fmtMB = (bytes) => (bytes / (1024 * 1024)).toFixed(1);
 const DEFAULT_MAX_SUBS   = 18;
 const DEFAULT_FORMAT     = FORMAT.BEST_OF_3;
 
-const ACCENT_COLORS = [
-  { id: 'orange', label: 'Orange', hex: '#f97316', rgb: '249 115 22' },
-  { id: 'blue',   label: 'Blue',   hex: '#3b82f6', rgb: '59 130 246' },
-  { id: 'green',  label: 'Green',  hex: '#22c55e', rgb: '34 197 94'  },
-  { id: 'red',    label: 'Red',    hex: '#ef4444', rgb: '239 68 68'  },
-  { id: 'purple', label: 'Purple', hex: '#a855f7', rgb: '168 85 247' },
-];
 
 function useMaxSubs() {
   const [maxSubs, setMaxSubsState] = useState(() => {

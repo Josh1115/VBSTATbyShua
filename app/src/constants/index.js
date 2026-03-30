@@ -113,6 +113,15 @@ export const POSITION_MULTIPLIERS = {
   DS:  1.15,
 };
 
+// App accent colors — shared between main.jsx (CSS variable bootstrap) and SettingsPage
+export const ACCENT_COLORS = [
+  { id: 'orange', label: 'Orange', hex: '#f97316', rgb: '249 115 22' },
+  { id: 'blue',   label: 'Blue',   hex: '#3b82f6', rgb: '59 130 246' },
+  { id: 'green',  label: 'Green',  hex: '#22c55e', rgb: '34 197 94'  },
+  { id: 'red',    label: 'Red',    hex: '#ef4444', rgb: '239 68 68'  },
+  { id: 'purple', label: 'Purple', hex: '#a855f7', rgb: '168 85 247' },
+];
+
 // NFHS rules
 // MAX_SUBS_PER_SET: intentionally 18 (club/college rules) rather than NFHS's 12.
 // Overridable via localStorage key 'vbstat_max_subs'. Change to 12 for strict NFHS play.
