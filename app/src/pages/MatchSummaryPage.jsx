@@ -28,6 +28,7 @@ import { RallyHistogram } from '../components/stats/RallyHistogram';
 import { PlayerComparison } from '../components/stats/PlayerComparison';
 import { ReviseSetModal } from '../components/match/ReviseSetModal';
 import { BoxScoreEntryModal } from '../components/match/BoxScoreEntryModal';
+import { Modal } from '../components/ui/Modal';
 import { FORMAT } from '../constants';
 import { useSwipe } from '../hooks/useSwipe';
 import {
@@ -81,7 +82,12 @@ function buildWinProbTimeline(rallies, sets, format) {
   const { p, q }    = computePQ(rallies);
   const setsToWin   = format === FORMAT.BEST_OF_3 ? 2 : 3;
   const decidingNum = format === FORMAT.BEST_OF_3 ? 3 : 5;
-  const pFutureSet  = computeSetWinProb(p, q, 0, 0, 'them', false);
+  // Average win prob for a regular future set (both possible serve starts)
+  const pFutureSet  = (computeSetWinProb(p, q, 0, 0, 'us', false) +
+                       computeSetWinProb(p, q, 0, 0, 'them', false)) / 2;
+  // Separate estimate for the deciding set (target 15 vs 25)
+  const pDeciderSet = (computeSetWinProb(p, q, 0, 0, 'us', true) +
+                       computeSetWinProb(p, q, 0, 0, 'them', true)) / 2;
 
   const sortedSets  = [...sets].sort((a, b) => a.set_number - b.set_number);
   const rallysBySet = new Map();
@@ -101,12 +107,24 @@ function buildWinProbTimeline(rallies, sets, format) {
 
     for (const rally of setRallies) {
       const sp  = computeSetWinProb(p, q, s1, s2, rally.serve_side, isDecider);
-      const mp  = computeMatchWinProb(sp, pFutureSet, ourSets, oppSets, setsToWin);
+      const mp  = computeMatchWinProb(sp, pFutureSet, ourSets, oppSets, setsToWin, pDeciderSet);
       points.push({ x, pct: Math.round(mp * 100), set: set.set_number });
       x++;
-      if (rally.point_winner === 'us') s1++; else s2++;
+      // Guard against malformed point_winner — only count explicit 'us'/'them' values
+      if (rally.point_winner === 'us') s1++;
+      else if (rally.point_winner === 'them') s2++;
     }
-    if (s1 > s2) ourSets++; else oppSets++;
+    // Use the set record's authoritative scores and status rather than rally-reconstructed
+    // tallies — rally writes are best-effort and can be missing if the DB write failed.
+    if (set.status === 'complete') {
+      if (set.our_score > set.opp_score) ourSets++;
+      else oppSets++;
+      // Add a terminal data point once the match result is decided
+      if (ourSets >= setsToWin || oppSets >= setsToWin) {
+        points.push({ x, pct: ourSets >= setsToWin ? 100 : 0, set: set.set_number });
+        break;
+      }
+    }
   }
 
   return points;
@@ -389,6 +407,15 @@ export function MatchSummaryPage() {
   const [reviseModalSet, setReviseModalSet] = useState(null);
   const [boxScoreSet, setBoxScoreSet] = useState(null);
   const [statsVersion, setStatsVersion] = useState(0);
+  const [editOpen,      setEditOpen]      = useState(false);
+  const [editOpp,       setEditOpp]       = useState('');
+  const [editOppAbbr,   setEditOppAbbr]   = useState('');
+  const [editOppRecord, setEditOppRecord] = useState('');
+  const [editDate,      setEditDate]      = useState('');
+  const [editLoc,       setEditLoc]       = useState('home');
+  const [editConf,      setEditConf]      = useState('non-con');
+  const [editMatchType, setEditMatchType] = useState('reg-season');
+  const [editSaving,    setEditSaving]    = useState(false);
 
   // Match + sets from Dexie (live)
   const match = useLiveQuery(() => db.matches.get(id), [id]);
@@ -564,6 +591,36 @@ export function MatchSummaryPage() {
 
   const matchMeta = match ? { ...match, sets: sets ?? [] } : {};
 
+  function openEditModal() {
+    setEditOpp(match.opponent_name ?? '');
+    setEditOppAbbr(match.opponent_abbr ?? '');
+    setEditOppRecord(match.opponent_record ?? '');
+    setEditDate(match.date ? match.date.slice(0, 10) : new Date().toISOString().slice(0, 10));
+    setEditLoc(match.location ?? 'home');
+    setEditConf(match.conference ?? 'non-con');
+    setEditMatchType(match.match_type ?? 'reg-season');
+    setEditOpen(true);
+  }
+
+  async function handleEditSave() {
+    if (!editOpp.trim()) return;
+    setEditSaving(true);
+    try {
+      await db.matches.update(id, {
+        opponent_name:   editOpp.trim(),
+        opponent_abbr:   editOppAbbr.trim().toUpperCase() || null,
+        opponent_record: editOppRecord.trim() || null,
+        date:            editDate ? new Date(editDate + 'T12:00:00').toISOString() : match.date,
+        location:        editLoc,
+        conference:      editConf,
+        match_type:      editMatchType,
+      });
+      setEditOpen(false);
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   function handlePDF() {
     if (!stats || !match) return;
     const completedSets = (sets ?? [])
@@ -635,7 +692,14 @@ export function MatchSummaryPage() {
         <>
           {/* Match header */}
           <div className="px-4 pt-4 pb-2">
-            <h2 className="text-xl font-bold">vs. {match.opponent_name ?? 'Opponent'}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold">vs. {match.opponent_name ?? 'Opponent'}</h2>
+              <button
+                onClick={openEditModal}
+                title="Edit match details"
+                className="text-slate-600 hover:text-slate-300 text-sm transition-colors"
+              >✎</button>
+            </div>
             {match.status === 'complete' && (() => {
               const won = (match.our_sets_won ?? 0) > (match.opp_sets_won ?? 0);
               return (
@@ -1056,6 +1120,90 @@ export function MatchSummaryPage() {
         stats={stats}
         fmtDate={fmtDate}
       />
+
+      {editOpen && (
+        <Modal
+          title="Edit Match Details"
+          onClose={() => setEditOpen(false)}
+          footer={
+            <>
+              <button onClick={() => setEditOpen(false)} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={handleEditSave}
+                disabled={editSaving || !editOpp.trim()}
+                className="px-4 py-2 text-sm font-semibold bg-primary text-white rounded-lg disabled:opacity-50"
+              >
+                {editSaving ? 'Saving…' : 'Save'}
+              </button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Date</label>
+              <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)}
+                className="w-full bg-surface border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Opponent</label>
+              <input type="text" value={editOpp} onChange={(e) => setEditOpp(e.target.value)}
+                className="w-full bg-surface border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Abbr</label>
+                <input type="text" value={editOppAbbr} maxLength={3}
+                  onChange={(e) => setEditOppAbbr(e.target.value.toUpperCase())}
+                  className="w-full bg-surface border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Record</label>
+                <input type="text" value={editOppRecord} placeholder="12-3"
+                  onChange={(e) => setEditOppRecord(e.target.value)}
+                  className="w-full bg-surface border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Location</label>
+              <div className="flex gap-2">
+                {['home', 'away', 'neutral'].map((loc) => (
+                  <button key={loc} onClick={() => setEditLoc(loc)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold capitalize transition-colors
+                      ${editLoc === loc ? 'bg-primary text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                    {loc}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Conference</label>
+              <div className="flex gap-2">
+                {[['conference', 'Con'], ['non-con', 'Non-Con']].map(([val, label]) => (
+                  <button key={val} onClick={() => setEditConf(val)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors
+                      ${editConf === val ? 'bg-primary text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Type</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[['reg-season', 'Reg Season'], ['tourney', 'Tourney'], ['ihsa-playoffs', 'IHSA Playoffs'], ['exhibition', 'Exhibition']].map(([val, label]) => (
+                  <button key={val} onClick={() => setEditMatchType(val)}
+                    className={`py-2 rounded-lg text-sm font-semibold transition-colors
+                      ${editMatchType === val ? 'bg-primary text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {reviseModalSet && (
         <ReviseSetModal

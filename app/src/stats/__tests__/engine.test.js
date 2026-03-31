@@ -14,6 +14,9 @@ import {
   computeSetTrends,
   computeRallyHistogram,
   computeRunsByRotation,
+  computePQ,
+  computeSetWinProb,
+  computeMatchWinProb,
 } from '../engine';
 import {
   fmt,
@@ -929,6 +932,146 @@ describe('computeSetTrends', () => {
     const result = computeSetTrends(contacts, sets);
     // APR = (3+3+2+0)/4 = 2.0
     expect(result[0]['APR']).toBe(2.0);
+  });
+});
+
+// ── computePQ ────────────────────────────────────────────────────────────────
+
+describe('computePQ', () => {
+  it('returns fallback values for empty rallies', () => {
+    const { p, q } = computePQ([]);
+    expect(p).toBe(0.58);
+    expect(q).toBe(0.42);
+  });
+
+  it('returns fallback when sample is below threshold', () => {
+    // 9 rallies per side — below WP_MIN_SAMPLE (10)
+    const rallies = [
+      ...Array.from({ length: 9 }, () => ({ serve_side: 'us',   point_winner: 'us'   })),
+      ...Array.from({ length: 9 }, () => ({ serve_side: 'them', point_winner: 'them' })),
+    ];
+    const { p, q } = computePQ(rallies);
+    expect(p).toBe(0.58);
+    expect(q).toBe(0.42);
+  });
+
+  it('computes observed rates once threshold is met', () => {
+    // 10 rallies each: we win all when receiving (p=1), none when serving (q=0)
+    const rallies = [
+      ...Array.from({ length: 10 }, () => ({ serve_side: 'them', point_winner: 'us'   })),
+      ...Array.from({ length: 10 }, () => ({ serve_side: 'us',   point_winner: 'them' })),
+    ];
+    const { p, q } = computePQ(rallies);
+    expect(p).toBe(1);
+    expect(q).toBe(0);
+  });
+
+  it('computes independent p and q rates', () => {
+    const rallies = [
+      // 10 serve rallies: 4 wins (q = 0.4)
+      ...Array.from({ length: 4 },  () => ({ serve_side: 'us',   point_winner: 'us'   })),
+      ...Array.from({ length: 6 },  () => ({ serve_side: 'us',   point_winner: 'them' })),
+      // 10 receive rallies: 7 wins (p = 0.7)
+      ...Array.from({ length: 7 },  () => ({ serve_side: 'them', point_winner: 'us'   })),
+      ...Array.from({ length: 3 },  () => ({ serve_side: 'them', point_winner: 'them' })),
+    ];
+    const { p, q } = computePQ(rallies);
+    expect(p).toBeCloseTo(0.7);
+    expect(q).toBeCloseTo(0.4);
+  });
+});
+
+// ── computeSetWinProb ─────────────────────────────────────────────────────────
+
+describe('computeSetWinProb', () => {
+  it('returns 1 when we already won (score at target with 2+ lead)', () => {
+    expect(computeSetWinProb(0.58, 0.42, 25, 20, 'us')).toBe(1);
+  });
+
+  it('returns 0 when opponent already won', () => {
+    expect(computeSetWinProb(0.58, 0.42, 20, 25, 'us')).toBe(0);
+  });
+
+  it('returns ~0.5 at 0-0 with fallback symmetric rates (p+q=1)', () => {
+    // With p=0.58, q=0.42 (p+q=1), the average over both serve starts is 0.5.
+    // Individually each is close to 0.5 (within 0.02) but not exact due to deuce asymmetry.
+    const vsUs   = computeSetWinProb(0.58, 0.42, 0, 0, 'us');
+    const vsThem = computeSetWinProb(0.58, 0.42, 0, 0, 'them');
+    expect((vsUs + vsThem) / 2).toBeCloseTo(0.5, 2);
+    expect(vsUs).toBeGreaterThan(0.45);
+    expect(vsUs).toBeLessThan(0.55);
+    expect(vsThem).toBeGreaterThan(0.45);
+    expect(vsThem).toBeLessThan(0.55);
+  });
+
+  it('win prob is higher when we are ahead in score', () => {
+    const ahead  = computeSetWinProb(0.58, 0.42, 15, 10, 'us');
+    const behind = computeSetWinProb(0.58, 0.42, 10, 15, 'us');
+    expect(ahead).toBeGreaterThan(0.5);
+    expect(behind).toBeLessThan(0.5);
+  });
+
+  it('handles deciding set target (15) vs regular (25)', () => {
+    // At 14-12 (one point from winning): decider gives higher prob than regular
+    const regular  = computeSetWinProb(0.58, 0.42, 14, 12, 'us', false);
+    const decider  = computeSetWinProb(0.58, 0.42, 14, 12, 'us', true);
+    expect(decider).toBeGreaterThan(regular);
+  });
+
+  it('defaults null/undefined serve_side to us rather than crashing', () => {
+    expect(() => computeSetWinProb(0.58, 0.42, 0, 0, null)).not.toThrow();
+    expect(() => computeSetWinProb(0.58, 0.42, 0, 0, undefined)).not.toThrow();
+  });
+});
+
+// ── computeMatchWinProb ───────────────────────────────────────────────────────
+
+describe('computeMatchWinProb', () => {
+  const P = 0.5; // equal future set win prob for symmetry checks
+
+  it('returns 0.5 at start of match (0-0 sets, equal set prob)', () => {
+    const mp = computeMatchWinProb(P, P, 0, 0, 2);
+    expect(mp).toBeCloseTo(0.5);
+  });
+
+  it('returns > 0.5 when we lead in sets (BO3, 1-0)', () => {
+    const mp = computeMatchWinProb(P, P, 1, 0, 2);
+    expect(mp).toBeGreaterThan(0.5);
+  });
+
+  it('returns < 0.5 when we trail in sets (BO3, 0-1)', () => {
+    const mp = computeMatchWinProb(P, P, 0, 1, 2);
+    expect(mp).toBeLessThan(0.5);
+  });
+
+  it('equals pCurrentSet in the deciding set (1-1, BO3)', () => {
+    // When tied in sets in the deciding set, match win prob = set win prob
+    const sp = 0.7;
+    const mp = computeMatchWinProb(sp, P, 1, 1, 2);
+    expect(mp).toBeCloseTo(sp);
+  });
+
+  it('returns 1 when pCurrentSet=1 and we just need this set (BO3, 1-0)', () => {
+    const mp = computeMatchWinProb(1, P, 1, 0, 2);
+    expect(mp).toBe(1);
+  });
+
+  it('returns 0 when pCurrentSet=0 and they just need this set (BO3, 0-1)', () => {
+    const mp = computeMatchWinProb(0, P, 0, 1, 2);
+    expect(mp).toBe(0);
+  });
+
+  it('uses pDeciderSet for the deciding set in BO3', () => {
+    // At 0-0 sets, tied future sets — pDeciderSet shifts the prob
+    const mpHigh = computeMatchWinProb(P, P, 0, 0, 2, 0.8); // high decider prob
+    const mpLow  = computeMatchWinProb(P, P, 0, 0, 2, 0.2); // low decider prob
+    expect(mpHigh).toBeGreaterThan(mpLow);
+  });
+
+  it('handles BO5 (setsToWin=3) correctly at 2-0', () => {
+    // Up 2-0 with equal set probs should be well above 0.5
+    const mp = computeMatchWinProb(P, P, 2, 0, 3);
+    expect(mp).toBeGreaterThan(0.75);
   });
 });
 

@@ -49,6 +49,12 @@ export function setBoolStorage(key, value) {
   } catch { /* quota exceeded or private mode — ignore */ }
 }
 
+// Parse a JSON draft blob from localStorage. Returns null on missing key or parse error.
+// Used by tool pages (ServeTracker, PracticeGame, ServeReceive) that share this pattern.
+export function readDraftJson(key) {
+  try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+}
+
 export function getIntStorage(key, defaultValue = NaN) {
   try {
     const v = parseInt(localStorage.getItem(key), 10);

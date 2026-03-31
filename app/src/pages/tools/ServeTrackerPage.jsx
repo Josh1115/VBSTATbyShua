@@ -4,16 +4,12 @@ import { db } from '../../db/schema';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { useUiStore, selectShowToast } from '../../store/uiStore';
 import { fmtDateShort } from '../../stats/formatters';
-import { getIntStorage, setStorageItem, STORAGE_KEYS } from '../../utils/storage';
+import { getIntStorage, setStorageItem, readDraftJson, STORAGE_KEYS } from '../../utils/storage';
 
 // Standard FIVB zone layout from server's POV (aiming at opponent's court)
 // Front row: 4 | 3 | 2    Back row: 5 | 6 | 1
 const ZONE_ROWS = [[4, 3, 2], [5, 6, 1]];
 const DRAFT_KEY = 'vbstat_draft_serve_tracker';
-
-function readDraft() {
-  try { return JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { return null; }
-}
 
 function heatStyle(count, max) {
   if (!count || !max) return {};
@@ -123,7 +119,7 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
     return !isNaN(saved) ? saved : null;
   });
   const [checked, setChecked] = useState(new Set());
-  const [draft]               = useState(readDraft);
+  const [draft]               = useState(() => readDraftJson(DRAFT_KEY));
 
   const teams   = useLiveQuery(() => db.teams.orderBy('name').toArray(), []);
   const players = useLiveQuery(

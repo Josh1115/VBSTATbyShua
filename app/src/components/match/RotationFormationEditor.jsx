@@ -11,12 +11,12 @@ const CELL_LABELS = ['TL', 'TM', 'TR', 'BL', 'BM', 'BR'];
 function defaultFormation(rotNum) {
   const r = rotNum - 1;
   return [
-    (r + 2) % 6, // TL = position 4
-    (r + 1) % 6, // TM = position 3
-    r % 6,       // TR = position 2
-    (r + 3) % 6, // BL = position 5
-    (r + 4) % 6, // BM = position 6
-    (r + 5) % 6, // BR = position 1
+    (r + 3) % 6, // TL = position 4
+    (r + 2) % 6, // TM = position 3
+    (r + 1) % 6, // TR = position 2
+    (r + 4) % 6, // BL = position 5
+    (r + 5) % 6, // BM = position 6
+    r       % 6, // BR = position 1 (server)
   ];
 }
 

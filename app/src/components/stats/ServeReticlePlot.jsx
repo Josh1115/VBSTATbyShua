@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { fmtPct } from '../../stats/formatters';
+import { SubToggle } from './SubToggle';
 
 const RETICLE_ZONE_GRID = [[1, 6, 5], [2, 3, 4]];
 const RW = 912, RH = 608;
@@ -10,23 +11,6 @@ function normalizeServeType(st) {
   return st === 'top' ? 'topspin' : st;
 }
 
-function SubToggle({ options, value, onChange }) {
-  return (
-    <div className="flex gap-1 mb-3">
-      {options.map(([v, label]) => (
-        <button
-          key={v}
-          onClick={() => onChange(v)}
-          className={`flex-1 py-1.5 rounded text-xs font-bold transition-colors ${
-            value === v ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-500 hover:bg-slate-700'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /**
  * Individual player serve placement card.

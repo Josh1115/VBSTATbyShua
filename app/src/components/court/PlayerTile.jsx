@@ -84,7 +84,7 @@ const JERSEY_HEX = {
 export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, heat, stats, zoneHints, isSubIn = false, isDimmed = false }) {
   const {
     recordContact, addPoint, tapHblk, recordOppBlock,
-    pendingHblk, serveSide,
+    pendingHblk, serveSide, rallyPhase,
     liberoId, playerNicknames, teamJerseyColor, liberoJerseyColor,
     rallyCount, rotationNum,
   } = useMatchStore(useShallow((s) => ({
@@ -94,6 +94,7 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
     recordOppBlock:    s.recordOppBlock,
     pendingHblk:       s.pendingHblk,
     serveSide:         s.serveSide,
+    rallyPhase:        s.rallyPhase,
     liberoId:          s.liberoId,
     playerNicknames:   s.playerNicknames,
     teamJerseyColor:   s.teamJerseyColor,
@@ -126,6 +127,18 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
     setSePending(false);
     setAePending(false);
   }, [rallyCount, serveSide]);
+
+  // When UNDO reverses a serve contact, rallyPhase returns to 'pre_serve' but
+  // rallyCount and serveSide are unchanged (contacts don't affect them), so the
+  // effect above doesn't fire. This effect catches that transition explicitly.
+  useEffect(() => {
+    if (rallyPhase === 'pre_serve') {
+      setServeRecorded(false);
+      setServeType(null);
+      setSePending(false);
+      setAePending(false);
+    }
+  }, [rallyPhase]);
 
   const isServing = serveSide === SIDE.US;
   const showServeRow = isServer && isServing && !serveRecorded;

@@ -122,9 +122,6 @@ function getServeReceiveDisplayOrder(lineup) {
   return GRID_ORDER.map(i => lineup[i]);
 }
 
-// Clockwise stagger from server position (pos1=gridIdx5 → pos2=2 → pos3=1 → pos4=0 → pos5=3 → pos6=4)
-const ROTATION_DELAYS = [165, 110, 55, 220, 275, 0];
-
 // Directional nudge per grid cell on rotation — matches the clockwise movement each player makes
 // Cell 0(top-left)=right, Cell 1(top-mid)=right, Cell 2(top-right)=down
 // Cell 3(bot-left)=up,    Cell 4(bot-mid)=left,   Cell 5(bot-right)=left
@@ -564,17 +561,16 @@ export const CourtGrid = memo(function CourtGrid({ aceZoneHints = {} }) {
           const isSubFlash = sub.flashIds.has(slot?.playerId);
           // #3 directional nudge — green for sideout, orange for manual rotation
           const nudgeSuffix = rot.isSideout ? '-so' : '';
-          const cellClass  = rot.rotating
-            ? `relative tile-rotate-${ROTATION_NUDGE[gridIdx]}${nudgeSuffix}`
-            : isSubFlash ? 'relative tile-sub-flash' : 'relative';
-          const cellStyle  = rot.rotating ? { animationDelay: `${ROTATION_DELAYS[gridIdx]}ms` } : undefined;
+          const nudgeClass  = rot.rotating
+            ? `tile-rotate-${ROTATION_NUDGE[gridIdx]}${nudgeSuffix} h-full`
+            : 'h-full';
           return (
             <div
               key={slot?.playerId ?? `empty-${gridIdx}`}
-              className={`${cellClass} overflow-hidden`}
-              style={cellStyle}
+              className={`relative overflow-hidden${isSubFlash ? ' tile-sub-flash' : ''}`}
               ref={(el) => { if (el && slot?.playerId) playerRefs.current[slot.playerId] = el; }}
             >
+              <div className={nudgeClass}>
               <PlayerTile
                 slot={slot}
                 position={position}
@@ -589,6 +585,7 @@ export const CourtGrid = memo(function CourtGrid({ aceZoneHints = {} }) {
                 isSubIn={sub.flashIds.has(slot?.playerId)}
                 isDimmed={inServeReceive && gridIdx < 3}
               />
+              </div>
               {/* Sub swap slide — outgoing name falls down-and-blurs (#9) */}
               {sub.ghosts[gridIdx] && (
                 <div className={`absolute top-0 inset-x-0 h-[42%] pointer-events-none flex items-center justify-center ${sub.liberoGhosts.has(gridIdx) ? 'libero-ghost-exit' : 'sub-ghost-exit'}`}>

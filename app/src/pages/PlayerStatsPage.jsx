@@ -101,7 +101,7 @@ export function PlayerStatsPage() {
         setStats({ playerRow, trends });
       })
       .finally(() => setLoading(false));
-  }, [matches, pid]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [matches, pid]); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: recompute only when source data or player changes, not on internal setter references
 
   // Single-row array for StatTable
   const statRow = useMemo(() => {

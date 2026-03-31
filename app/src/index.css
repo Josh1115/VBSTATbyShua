@@ -653,10 +653,10 @@
   30%  { box-shadow: inset 0 0 0 2px rgba(249,115,22,0.8); transform: translateY(7px); }
   100% { box-shadow: inset 0 0 0 0 rgba(249,115,22,0);   transform: translateY(0);  }
 }
-.tile-rotate-right { animation: tile-rotate-right 320ms var(--ease-spring) both; }
-.tile-rotate-left  { animation: tile-rotate-left  320ms var(--ease-spring) both; }
-.tile-rotate-up    { animation: tile-rotate-up    320ms var(--ease-spring) both; }
-.tile-rotate-down  { animation: tile-rotate-down  320ms var(--ease-spring) both; }
+.tile-rotate-right { animation: tile-rotate-right 200ms ease-out both; }
+.tile-rotate-left  { animation: tile-rotate-left  200ms ease-out both; }
+.tile-rotate-up    { animation: tile-rotate-up    200ms ease-out both; }
+.tile-rotate-down  { animation: tile-rotate-down  200ms ease-out both; }
 
 /* Sideout variants — green nudge */
 @keyframes tile-rotate-right-so {
@@ -679,10 +679,10 @@
   30%  { box-shadow: inset 0 0 0 2px rgba(34,197,94,0.8); transform: translateY(7px); }
   100% { box-shadow: inset 0 0 0 0 rgba(34,197,94,0);    transform: translateY(0);   }
 }
-.tile-rotate-right-so { animation: tile-rotate-right-so 320ms var(--ease-spring) both; }
-.tile-rotate-left-so  { animation: tile-rotate-left-so  320ms var(--ease-spring) both; }
-.tile-rotate-up-so    { animation: tile-rotate-up-so    320ms var(--ease-spring) both; }
-.tile-rotate-down-so  { animation: tile-rotate-down-so  320ms var(--ease-spring) both; }
+.tile-rotate-right-so { animation: tile-rotate-right-so 200ms ease-out both; }
+.tile-rotate-left-so  { animation: tile-rotate-left-so  200ms ease-out both; }
+.tile-rotate-up-so    { animation: tile-rotate-up-so    200ms ease-out both; }
+.tile-rotate-down-so  { animation: tile-rotate-down-so  200ms ease-out both; }
 
 /* ── Net cable wave — gentle horizontal sway like a real net in a gym ── */
 @keyframes net-cable-wave {

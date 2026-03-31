@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
+import { MATCH_STATUS } from '../constants';
 import { PageHeader } from '../components/layout/PageHeader';
 import { TabBar } from '../components/ui/Tab';
 import { Button } from '../components/ui/Button';
@@ -45,7 +46,7 @@ function HistoryTab({ oppId, oppName }) {
     );
   }
 
-  const complete = matches.filter(m => m.status === 'complete');
+  const complete = matches.filter(m => m.status === MATCH_STATUS.COMPLETE);
   const wins   = complete.filter(m => (m.our_sets_won ?? 0) > (m.opp_sets_won ?? 0)).length;
   const losses = complete.filter(m => (m.opp_sets_won ?? 0) > (m.our_sets_won ?? 0)).length;
 
@@ -61,7 +62,7 @@ function HistoryTab({ oppId, oppName }) {
         const dateStr = m.date
           ? new Date(m.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
           : 'Date unknown';
-        const isComplete = m.status === 'complete';
+        const isComplete = m.status === MATCH_STATUS.COMPLETE;
         const won = isComplete && (m.our_sets_won ?? 0) > (m.opp_sets_won ?? 0);
         const lost = isComplete && (m.opp_sets_won ?? 0) > (m.our_sets_won ?? 0);
         const resultColor = won ? 'text-emerald-400' : lost ? 'text-red-400' : 'text-slate-400';

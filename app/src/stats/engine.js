@@ -954,18 +954,23 @@ export function computeSetWinProb(p, q, ourScore, oppScore, serveSide, isDecider
     return val;
   }
 
-  return dp(ourScore, oppScore, serveSide === 'us' ? 'us' : 'them');
+  const startSide = serveSide === 'us' ? 'us' : serveSide === 'them' ? 'them' : 'us';
+  return dp(ourScore, oppScore, startSide);
 }
 
-export function computeMatchWinProb(pCurrentSet, pFutureSet, ourSets, oppSets, setsToWin = 3) {
+// pDeciderSet: win prob for the deciding set (target 15); pass null to use pFutureSet for all sets.
+export function computeMatchWinProb(pCurrentSet, pFutureSet, ourSets, oppSets, setsToWin = 3, pDeciderSet = null) {
   const memo = new Map();
 
   function dp(w, l) {
-    if (w === setsToWin) return 1;
-    if (l === setsToWin) return 0;
+    if (w >= setsToWin) return 1;
+    if (l >= setsToWin) return 0;
     const key = `${w},${l}`;
     if (memo.has(key)) return memo.get(key);
-    const val = pFutureSet * dp(w + 1, l) + (1 - pFutureSet) * dp(w, l + 1);
+    // Use deciding-set probability when both teams are one win away from the decider
+    const isDecider = pDeciderSet !== null && w === setsToWin - 1 && l === setsToWin - 1;
+    const pNext = isDecider ? pDeciderSet : pFutureSet;
+    const val = pNext * dp(w + 1, l) + (1 - pNext) * dp(w, l + 1);
     memo.set(key, val);
     return val;
   }

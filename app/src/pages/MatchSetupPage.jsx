@@ -40,6 +40,7 @@ export function MatchSetupPage() {
   const [startZone, setStartZone]  = useState(1);
   // liberoId = player designated as libero (optional)
   const [liberoId,  setLiberoId]   = useState('');
+  const [startFormations, setStartFormations] = useState(null);
   const [servingSide, setServingSide] = useState(SIDE.US);
   const [teamJerseyColor,   setTeamJerseyColor]   = useState('black');
   const [liberoJerseyColor, setLiberoJerseyColor] = useState('black');
@@ -120,13 +121,14 @@ export function MatchSetupPage() {
     const liberoIds = toIds(selectedTeam.libero_jersey_color);
     if (teamIds.length   && !teamIds.includes(teamJerseyColor))     setTeamJerseyColor(teamIds[0]);
     if (liberoIds.length && !liberoIds.includes(liberoJerseyColor)) setLiberoJerseyColor(liberoIds[0]);
-  }, [selectedTeam]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedTeam]); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: only reset jersey colors when team changes, not on every color state update
 
   const applyLoadedLineup = (sl) => {
     setLineupState(sl.serve_order.map(String));
     setStartZone(sl.start_zone ?? 1);
     setLiberoId(sl.libero_player_id ? String(sl.libero_player_id) : '');
     setSlotPositions(sl.slot_positions ?? Array(6).fill(''));
+    setStartFormations(sl.serve_receive_formations ?? null);
     setLoadPickerOpen(false);
   };
 
@@ -201,6 +203,7 @@ export function MatchSetupPage() {
         our_score:        0,
         opp_score:        0,
         libero_player_id: liberoId ? Number(liberoId) : null,
+        ...(startFormations ? { serve_receive_formations: startFormations } : {}),
       });
 
       // Write lineup rows: position = court zone based on where Player I starts
@@ -236,7 +239,7 @@ export function MatchSetupPage() {
           </label>
           <select
             value={seasonId}
-            onChange={(e) => { setSeasonId(e.target.value); setLineupState(Array(6).fill('')); setSlotPositions(Array(6).fill('')); setLiberoId(''); }}
+            onChange={(e) => { setSeasonId(e.target.value); setLineupState(Array(6).fill('')); setSlotPositions(Array(6).fill('')); setLiberoId(''); setStartFormations(null); }}
             className="w-full bg-surface border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
           >
             <option value="">Select season…</option>

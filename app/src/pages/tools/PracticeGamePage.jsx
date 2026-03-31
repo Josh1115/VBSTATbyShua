@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { getBoolStorage, getIntStorage, setStorageItem, STORAGE_KEYS } from '../../utils/storage';
+import { getBoolStorage, getIntStorage, setStorageItem, readDraftJson, STORAGE_KEYS } from '../../utils/storage';
 import { db } from '../../db/schema';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { useUiStore, selectShowToast } from '../../store/uiStore';
@@ -15,10 +15,6 @@ const RATING_BG = {
 };
 
 const DRAFT_KEY = 'vbstat_draft_practice_game';
-
-function readDraft() {
-  try { return JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { return null; }
-}
 
 function StatChip({ label, value, color = 'text-white' }) {
   return (
@@ -50,7 +46,7 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
   });
   const [opponent, setOpponent] = useState('');
   const [checked,  setChecked]  = useState(new Set());
-  const [draft]                 = useState(readDraft);
+  const [draft]                 = useState(() => readDraftJson(DRAFT_KEY));
 
   const teams   = useLiveQuery(() => db.teams.orderBy('name').toArray(), []);
   const players = useLiveQuery(

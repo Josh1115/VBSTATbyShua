@@ -4,7 +4,7 @@ import { db } from '../../db/schema';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { useUiStore, selectShowToast } from '../../store/uiStore';
 import { fmtDateShort, calcAPR } from '../../stats/formatters';
-import { getIntStorage, setStorageItem, STORAGE_KEYS } from '../../utils/storage';
+import { getIntStorage, setStorageItem, readDraftJson, STORAGE_KEYS } from '../../utils/storage';
 
 const RATING_BG = {
   0: 'bg-red-600 active:brightness-75',
@@ -15,10 +15,6 @@ const RATING_BG = {
 
 const DRAFT_KEY = 'vbstat_draft_serve_receive';
 
-function readDraft() {
-  try { return JSON.parse(localStorage.getItem(DRAFT_KEY)); } catch { return null; }
-}
-
 // ─── Setup screen ────────────────────────────────────────────────────────────
 
 function SetupView({ onStart, onResume, onDiscardDraft }) {
@@ -27,7 +23,7 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
     return !isNaN(saved) ? saved : null;
   });
   const [checked, setChecked] = useState(new Set());
-  const [draft]               = useState(readDraft);
+  const [draft]               = useState(() => readDraftJson(DRAFT_KEY));
 
   const teams   = useLiveQuery(() => db.teams.orderBy('name').toArray(), []);
   const players = useLiveQuery(
