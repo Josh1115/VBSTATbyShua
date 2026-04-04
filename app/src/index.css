@@ -196,6 +196,23 @@
   animation: icon-bounce 220ms var(--ease-spring) forwards;
 }
 
+/* ── NavBar idle icon animations ── */
+@keyframes gear-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.animate-gear-spin {
+  animation: gear-spin 12s linear infinite;
+}
+
+@keyframes chart-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-3px); }
+}
+.animate-chart-float {
+  animation: chart-float 2.4s ease-in-out infinite;
+}
+
 /* ── Item 26: Score nudge popup bounce entrance ── */
 @keyframes nudge-pop {
   from { opacity: 0; transform: scale(0.8); }

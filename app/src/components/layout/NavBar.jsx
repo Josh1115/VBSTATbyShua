@@ -9,8 +9,8 @@ const TABS = [
   { to: '/',         label: 'Home',     icon: '🏠', end: true },
   { to: '/teams',    label: 'Teams',    icon: '👥', end: false },
   null, // FAB slot
-  { to: '/reports',  label: 'Reports',  icon: '📊', end: false },
-  { to: '/settings', label: 'Settings', icon: '⚙️', end: false },
+  { to: '/reports',  label: 'Reports',  icon: '📊', end: false, idleAnim: 'animate-chart-float' },
+  { to: '/settings', label: 'Settings', icon: '⚙️', end: false, idleAnim: 'animate-gear-spin'  },
 ];
 
 const tabClass = (isActive) =>
@@ -67,7 +67,7 @@ export const NavBar = memo(function NavBar() {
                 <>
                   <span
                     key={String(isActive)}
-                    className={`text-xl${isActive ? ' animate-icon-bounce' : ''}`}
+                    className={`text-xl ${isActive ? 'animate-icon-bounce' : (tab.idleAnim ?? '')}`}
                   >
                     {tab.icon}
                   </span>
