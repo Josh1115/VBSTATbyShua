@@ -1426,9 +1426,27 @@ export function TeamDetailPage() {
                 const sessions = (practiceSessions ?? []).filter((s) => s.tool_type === toolType);
                 if (sessions.length === 0) return null;
                 const titles = { practice_game: 'Practice Games', serve_receive: 'Serve Receive', serve_tracker: 'Serve Tracker' };
+                const srSummary = toolType === 'serve_receive' ? (() => {
+                  const totalPasses = sessions.reduce((s, sess) => s + (sess.data?.totalPasses ?? 0), 0);
+                  const sumRatings  = sessions.reduce((s, sess) => {
+                    const passes = (sess.data?.players ?? []).flatMap((p) => p.passes ?? []);
+                    return s + passes.reduce((a, b) => a + b, 0);
+                  }, 0);
+                  const apr = totalPasses ? (sumRatings / totalPasses).toFixed(2) : '—';
+                  return { totalPasses, apr };
+                })() : null;
+
                 return (
                   <section key={toolType}>
                     <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-2">{titles[toolType]}</h2>
+                    {srSummary && (
+                      <div className="px-4 py-3 bg-slate-800/60 rounded-xl mb-2 flex justify-between items-center">
+                        <span className="text-xs text-slate-400 uppercase tracking-wide font-semibold">All Sessions</span>
+                        <span className="text-sm text-slate-200 font-semibold tabular-nums">
+                          {srSummary.apr} APR · {srSummary.totalPasses} reps
+                        </span>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       {sessions.map((s) => (
                         <div key={s.id} className="bg-surface rounded-xl px-4 py-3 cursor-pointer hover:bg-slate-700 active:scale-[0.98] transition-[transform,background-color] duration-75" onClick={() => setSelectedSession(s)}>

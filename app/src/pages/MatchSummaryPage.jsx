@@ -29,6 +29,7 @@ import { PlayerComparison } from '../components/stats/PlayerComparison';
 import { TeamComparison } from '../components/stats/TeamComparison';
 import { ReviseSetModal } from '../components/match/ReviseSetModal';
 import { BoxScoreEntryModal } from '../components/match/BoxScoreEntryModal';
+import { VideoCorrectionsModal } from '../components/match/VideoCorrectionsModal';
 import { Modal } from '../components/ui/Modal';
 import { FORMAT } from '../constants';
 import { getStorageItem, STORAGE_KEYS } from '../utils/storage';
@@ -410,6 +411,7 @@ export function MatchSummaryPage() {
   const [reviseModalSet, setReviseModalSet] = useState(null);
   const [boxScoreSet, setBoxScoreSet] = useState(null);
   const [statsVersion, setStatsVersion] = useState(0);
+  const [showCorrections, setShowCorrections] = useState(false);
   const [editOpen,      setEditOpen]      = useState(false);
   const [editOpp,       setEditOpp]       = useState('');
   const [editOppAbbr,   setEditOppAbbr]   = useState('');
@@ -423,6 +425,10 @@ export function MatchSummaryPage() {
   // Match + sets from Dexie (live)
   const match = useLiveQuery(() => db.matches.get(id), [id]);
   const sets   = useLiveQuery(() => db.sets.where('match_id').equals(id).sortBy('set_number'), [id]);
+  const correctionContacts = useLiveQuery(
+    () => db.contacts.where('match_id').equals(id).filter((c) => c.source === 'video_correction').toArray(),
+    [id]
+  );
 
   // Players keyed by id for name lookup (match → season → team)
   const players = useLiveQuery(async () => {
@@ -489,17 +495,22 @@ export function MatchSummaryPage() {
     return sets.filter((s) => s.status === 'complete').reduce((sum, s) => sum + (s.opp_score ?? 0), 0);
   }, [sets, selectedSetId]);
 
+  const correctedPlayerIds = useMemo(
+    () => new Set((correctionContacts ?? []).map((c) => c.player_id)),
+    [correctionContacts]
+  );
+
   const playerRows = useMemo(() =>
     displayStats
       ? Object.entries(displayStats.players).map(([pid, s]) => ({
           id:   pid,
-          name: playerNames[pid] ?? `#${pid}`,
+          name: `${playerNames[pid] ?? `#${pid}`}${correctedPlayerIds.has(Number(pid)) ? ' ✎' : ''}`,
           ...s,
           f_se_pct: s.f_sa > 0 ? s.f_se / s.f_sa : null,
           t_se_pct: s.t_sa > 0 ? s.t_se / s.t_sa : null,
         }))
       : [],
-    [displayStats, playerNames]
+    [displayStats, playerNames, correctedPlayerIds]
   );
 
   const xkTeam = useMemo(() => aggregateXKTeamStats(playerRows), [playerRows]);
@@ -765,6 +776,9 @@ export function MatchSummaryPage() {
               </Button>
               <Button size="sm" variant="secondary" disabled={!stats || sharingCard} onClick={handleShareCard}>
                 {sharingCard ? '…' : '📸 Share Card'}
+              </Button>
+              <Button size="sm" variant="secondary" disabled={!stats} onClick={() => setShowCorrections(true)}>
+                ✎ Correct
               </Button>
             </div>
           </div>
@@ -1254,6 +1268,17 @@ export function MatchSummaryPage() {
           players={playerList}
           onClose={() => setBoxScoreSet(null)}
           onSaved={() => { setBoxScoreSet(null); setStatsVersion((v) => v + 1); }}
+        />
+      )}
+
+      {showCorrections && stats && (
+        <VideoCorrectionsModal
+          matchId={id}
+          sets={sets ?? []}
+          playerList={playerList}
+          displayStats={displayStats}
+          onCorrect={() => setStatsVersion((v) => v + 1)}
+          onClose={() => setShowCorrections(false)}
         />
       )}
     </div>

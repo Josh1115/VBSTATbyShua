@@ -35,9 +35,22 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
     () => db.practice_sessions.where('tool_type').equals('serve_receive').reverse().limit(10).toArray(),
     []
   );
+  const allSessions = useLiveQuery(
+    () => db.practice_sessions.where('tool_type').equals('serve_receive').toArray(),
+    []
+  );
 
   const sorted = [...(players ?? [])].sort((a, b) => (a.jersey_number ?? 0) - (b.jersey_number ?? 0));
   const allOn  = sorted.length > 0 && sorted.every((p) => checked.has(p.id));
+
+  const summaryTotalPasses = (allSessions ?? []).reduce((s, sess) => s + (sess.data?.totalPasses ?? 0), 0);
+  const summaryAPRNum = summaryTotalPasses
+    ? (allSessions ?? []).reduce((s, sess) => {
+        const passes = (sess.data?.players ?? []).flatMap((p) => p.passes ?? []);
+        return s + passes.reduce((a, b) => a + b, 0);
+      }, 0) / summaryTotalPasses
+    : null;
+  const summaryAPR = summaryAPRNum !== null ? summaryAPRNum.toFixed(2) : '—';
 
   function toggle(id) {
     setChecked((prev) => {
@@ -134,6 +147,12 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
       {/* Recent Sessions */}
       {recentSessions?.length > 0 && (
         <div>
+          <div className="px-4 py-3 bg-slate-800/60 rounded-xl mb-2 flex justify-between items-center">
+            <span className="text-xs text-slate-400 uppercase tracking-wide font-semibold">All Sessions</span>
+            <span className="text-sm text-slate-200 font-semibold tabular-nums">
+              {summaryAPR} APR · {summaryTotalPasses} reps
+            </span>
+          </div>
           <div className="px-1 pb-1.5">
             <span className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Recent Sessions</span>
           </div>
