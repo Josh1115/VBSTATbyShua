@@ -281,16 +281,26 @@ export function ReportsPage() {
     [playerRows]
   );
 
-  const rotationRows = useMemo(() =>
-    stats && !stats.empty
-      ? Object.entries(stats.rotation.rotations).map(([n, r]) => ({
-          id: n,
-          name: `R${n}`,
-          ...r,
-        }))
-      : [],
-    [stats]
-  );
+  const rotationRows = useMemo(() => {
+    if (!stats || stats.empty) return [];
+    const rows = Object.entries(stats.rotation.rotations).map(([n, r]) => ({
+      id: n,
+      name: `R${n}`,
+      ...r,
+    }));
+    // Mark the single lowest SO% and lowest SP% rows for yellow highlighting
+    const withSo = rows.filter(r => r.so_pct != null);
+    if (withSo.length) {
+      const minSo = Math.min(...withSo.map(r => r.so_pct));
+      rows.forEach(r => { r._minSo = r.so_pct === minSo; });
+    }
+    const withBp = rows.filter(r => r.bp_pct != null);
+    if (withBp.length) {
+      const minBp = Math.min(...withBp.map(r => r.bp_pct));
+      rows.forEach(r => { r._minBp = r.bp_pct === minBp; });
+    }
+    return rows;
+  }, [stats]);
 
   // IS/OOS rows for per-rotation MiniTable
   const isOosRows = useMemo(() => {

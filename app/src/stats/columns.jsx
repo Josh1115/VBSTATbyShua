@@ -1,18 +1,18 @@
 import { fmtPct, fmtCount, fmtRate, fmtPassRating, fmtHitting, fmtVER } from './formatters';
 import { VERBadge } from '../components/stats/VERBadge';
 
-function soColor(v) {
+function soColor(v, row) {
   if (v == null) return '';
+  if (row?._minSo) return 'text-yellow-400 font-semibold';
   if (v < 0.40) return 'text-red-400 font-semibold';
-  if (v < 0.50) return 'text-yellow-400';
   if (v > 0.60) return 'text-emerald-400';
   return '';
 }
 
-function bpColor(v) {
+function bpColor(v, row) {
   if (v == null) return '';
+  if (row?._minBp) return 'text-yellow-400 font-semibold';
   if (v < 0.25) return 'text-red-400 font-semibold';
-  if (v < 0.38) return 'text-yellow-400';
   if (v > 0.50) return 'text-emerald-400';
   return '';
 }
