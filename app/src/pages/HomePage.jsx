@@ -181,8 +181,8 @@ export function HomePage() {
       blocks:  findLeader(ps => (ps.bs ?? 0) + (ps.ba ?? 0)),
       digs:    findLeader(ps => ps.dig  ?? 0),
       assists: findLeader(ps => ps.ast  ?? 0),
-      rec:     findLeader(ps => ps.pa  ?? 0),
-      apr:     findLeader(ps => (ps.pa ?? 0) > 0 ? (ps.apr ?? 0) : 0),
+      rec:     findLeader(ps => (ps.pa ?? 0) >= 5 ? (ps.pa ?? 0) : 0),
+      apr:     findLeader(ps => (ps.pa ?? 0) >= 5 ? (ps.apr ?? 0) : 0),
       teamTotals: {
         k:   ts.k,
         ace: ts.ace,
