@@ -937,6 +937,19 @@ export function MatchSummaryPage() {
               <Button size="sm" variant="secondary" disabled={!stats} onClick={() => setShowCorrections(true)}>
                 ✎ Correct
               </Button>
+              {match.status === 'complete' && match.opponent_id && stats && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    const suggestions = generateScoutingSuggestions(stats);
+                    setScoutSuggestions(suggestions.length ? suggestions : [{ type: 'note', value: '' }]);
+                    setShowScoutModal(true);
+                  }}
+                >
+                  📋 Scout
+                </Button>
+              )}
             </div>
           </div>
 
