@@ -213,6 +213,23 @@
   animation: chart-float 2.4s ease-in-out infinite;
 }
 
+@keyframes home-pulse {
+  0%, 100% { transform: scale(1);    }
+  50%       { transform: scale(1.12); }
+}
+.animate-home-pulse {
+  animation: home-pulse 3s ease-in-out infinite;
+}
+
+@keyframes teams-wobble {
+  0%, 100% { transform: rotate(0deg);  }
+  25%       { transform: rotate(-8deg); }
+  75%       { transform: rotate(8deg);  }
+}
+.animate-teams-wobble {
+  animation: teams-wobble 2.8s ease-in-out infinite;
+}
+
 /* ── Item 26: Score nudge popup bounce entrance ── */
 @keyframes nudge-pop {
   from { opacity: 0; transform: scale(0.8); }

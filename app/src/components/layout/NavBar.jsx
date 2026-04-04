@@ -6,11 +6,11 @@ import { MATCH_STATUS } from '../../constants';
 import clsx from 'clsx';
 
 const TABS = [
-  { to: '/',         label: 'Home',     icon: '🏠', end: true },
-  { to: '/teams',    label: 'Teams',    icon: '👥', end: false },
+  { to: '/',         label: 'Home',     icon: '🏠', end: true,  idleAnim: 'animate-home-pulse'   },
+  { to: '/teams',    label: 'Teams',    icon: '👥', end: false, idleAnim: 'animate-teams-wobble' },
   null, // FAB slot
-  { to: '/reports',  label: 'Reports',  icon: '📊', end: false, idleAnim: 'animate-chart-float' },
-  { to: '/settings', label: 'Settings', icon: '⚙️', end: false, idleAnim: 'animate-gear-spin'  },
+  { to: '/reports',  label: 'Reports',  icon: '📊', end: false, idleAnim: 'animate-chart-float'  },
+  { to: '/settings', label: 'Settings', icon: '⚙️', end: false, idleAnim: 'animate-gear-spin'   },
 ];
 
 const tabClass = (isActive) =>
