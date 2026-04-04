@@ -46,7 +46,6 @@ export const ACTION = {
   DIG:               'dig',
   FREEBALL_RECEIVE:  'freeball_receive',
   FREEBALL_SEND:     'freeball_send',
-  COVER:             'cover',
   ERROR:             'error',
 };
 

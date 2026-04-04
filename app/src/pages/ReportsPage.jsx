@@ -7,7 +7,7 @@ import { db } from '../db/schema';
 import { computeSeasonStats, computePQ, computeSetWinProb, aggregateXKTeamStats } from '../stats/engine';
 import { fmtHitting, fmtPassRating, fmtPct, fmtCount, fmtVER } from '../stats/formatters';
 import { VERBadge } from '../components/stats/VERBadge';
-import { ROTATION_COLS, SERVING_COLS, TAB_COLUMNS } from '../stats/columns';
+import { ROTATION_COLS, SERVING_COLS, TAB_COLUMNS, ISOOS_COLS, TRANS_COLS, RUN_COLS } from '../stats/columns';
 import { PageHeader } from '../components/layout/PageHeader';
 import { TabBar } from '../components/ui/Tab';
 import { Spinner } from '../components/ui/Spinner';
@@ -92,43 +92,6 @@ const TEAM_STAT_SECTIONS = [
   },
 ];
 
-// IS/OOS per-rotation table columns
-const ISOOS_COLS = [
-  { key: 'name',        label: 'Rot'       },
-  { key: 'is_ta',       label: 'IS',        fmt: fmtCount   },
-  { key: 'is_k_pct',    label: 'IS K%',     fmt: fmtPct     },
-  { key: 'is_hit_pct',  label: 'IS HIT%',   fmt: fmtHitting },
-  { key: 'is_win_pct',  label: 'IS Win%',   fmt: fmtPct     },
-  { key: 'oos_ta',      label: 'OOS',       fmt: fmtCount   },
-  { key: 'oos_k_pct',   label: 'OOS K%',    fmt: fmtPct     },
-  { key: 'oos_hit_pct', label: 'OOS HIT%',  fmt: fmtHitting },
-  { key: 'oos_win_pct', label: 'OOS Win%',  fmt: fmtPct     },
-];
-
-// Transition/free-ball per-rotation table columns
-const TRANS_COLS = [
-  { key: 'name',          label: 'Rot'       },
-  { key: 'free_ta',       label: 'FB ATK',   fmt: fmtCount   },
-  { key: 'free_k_pct',    label: 'FB K%',    fmt: fmtPct     },
-  { key: 'free_hit_pct',  label: 'FB HIT%',  fmt: fmtHitting },
-  { key: 'free_win_pct',  label: 'FB Win%',  fmt: fmtPct     },
-  { key: 'trans_ta',      label: 'TR ATK',   fmt: fmtCount   },
-  { key: 'trans_k_pct',   label: 'TR K%',    fmt: fmtPct     },
-  { key: 'trans_hit_pct', label: 'TR HIT%',  fmt: fmtHitting },
-  { key: 'trans_win_pct', label: 'TR Win%',  fmt: fmtPct     },
-];
-
-const fmtAvg = (val) => val == null ? '—' : val.toFixed(1);
-
-// Run breakdown per-rotation table columns
-const RUN_COLS = [
-  { key: 'name',      label: 'Rot'     },
-  { key: 'max_run',   label: 'Best',   fmt: fmtCount },
-  { key: 'avg_run',   label: 'Avg',    fmt: fmtAvg   },
-  { key: 'runs_3plus',label: '3+',     fmt: fmtCount },
-  { key: 'runs_5plus',label: '5+',     fmt: fmtCount },
-];
-
 // Simple fixed-order (non-sortable) table for rotation breakdowns
 function MiniTable({ cols, rows }) {
   if (!rows.length) return null;
@@ -190,7 +153,7 @@ export function ReportsPage() {
   const [selectedMatchIds, setSelectedMatchIds] = useState(null); // null = all matches
   const [conference, setConference] = useState('');
   const [location,   setLocation]   = useState('');
-  const [matchType,  setMatchType]  = useState('');
+  const [matchTypes, setMatchTypes] = useState([]);
   const [stats, setStats] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -257,7 +220,7 @@ export function ReportsPage() {
   if (selectedMatchIds?.length) activeFilters.matchIds = selectedMatchIds;
   if (showChipFilters && conference) activeFilters.conference = conference;
   if (showChipFilters && location)   activeFilters.location   = location;
-  if (showChipFilters && matchType)  activeFilters.matchType  = matchType;
+  if (showChipFilters && matchTypes.length) activeFilters.matchType = matchTypes;
   const hasFilters = Object.keys(activeFilters).length > 0;
 
   // Short date label for match chips — "3/15"
@@ -279,7 +242,7 @@ export function ReportsPage() {
         .finally(() => setLoading(false));
     }, 150);
     return () => clearTimeout(statsDebounceRef.current);
-  }, [selectedSeasonId, selectedMatchIds, conference, location, matchType]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedSeasonId, selectedMatchIds, conference, location, matchTypes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const playerRows = useMemo(() =>
     stats && !stats.empty
@@ -476,8 +439,13 @@ export function ReportsPage() {
           </div>
           <div className="flex gap-1.5 flex-wrap items-center">
             <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Type</span>
-            {[['', 'All'], ['reg-season', 'Reg Season'], ['tourney', 'Tourney'], ['ihsa-playoffs', 'Playoffs'], ['exhibition', 'Exhibition']].map(([val, label]) => (
-              <button key={val} onClick={() => setMatchType(val)} className={chipClass(matchType === val)}>{label}</button>
+            <button onClick={() => setMatchTypes([])} className={chipClass(matchTypes.length === 0)}>All</button>
+            {[['reg-season', 'Reg Season'], ['tourney', 'Tourney'], ['ihsa-playoffs', 'Playoffs'], ['exhibition', 'Exhibition']].map(([val, label]) => (
+              <button
+                key={val}
+                onClick={() => setMatchTypes(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val])}
+                className={chipClass(matchTypes.includes(val))}
+              >{label}</button>
             ))}
           </div>
         </div>

@@ -125,6 +125,42 @@ export const TAB_COLUMNS = {
   ],
 };
 
+// IS/OOS per-rotation table columns (used in ReportsPage rotation analysis)
+export const ISOOS_COLS = [
+  { key: 'name',        label: 'Rot'       },
+  { key: 'is_ta',       label: 'IS',        fmt: fmtCount   },
+  { key: 'is_k_pct',    label: 'IS K%',     fmt: fmtPct     },
+  { key: 'is_hit_pct',  label: 'IS HIT%',   fmt: fmtHitting },
+  { key: 'is_win_pct',  label: 'IS Win%',   fmt: fmtPct     },
+  { key: 'oos_ta',      label: 'OOS',       fmt: fmtCount   },
+  { key: 'oos_k_pct',   label: 'OOS K%',    fmt: fmtPct     },
+  { key: 'oos_hit_pct', label: 'OOS HIT%',  fmt: fmtHitting },
+  { key: 'oos_win_pct', label: 'OOS Win%',  fmt: fmtPct     },
+];
+
+// Transition/free-ball per-rotation table columns
+export const TRANS_COLS = [
+  { key: 'name',          label: 'Rot'       },
+  { key: 'free_ta',       label: 'FB ATK',   fmt: fmtCount   },
+  { key: 'free_k_pct',    label: 'FB K%',    fmt: fmtPct     },
+  { key: 'free_hit_pct',  label: 'FB HIT%',  fmt: fmtHitting },
+  { key: 'free_win_pct',  label: 'FB Win%',  fmt: fmtPct     },
+  { key: 'trans_ta',      label: 'TR ATK',   fmt: fmtCount   },
+  { key: 'trans_k_pct',   label: 'TR K%',    fmt: fmtPct     },
+  { key: 'trans_hit_pct', label: 'TR HIT%',  fmt: fmtHitting },
+  { key: 'trans_win_pct', label: 'TR Win%',  fmt: fmtPct     },
+];
+
+// Run-streak per-rotation table columns
+const fmtAvg = (val) => val == null ? '—' : val.toFixed(1);
+export const RUN_COLS = [
+  { key: 'name',       label: 'Rot' },
+  { key: 'max_run',    label: 'Best', fmt: fmtCount },
+  { key: 'avg_run',    label: 'Avg',  fmt: fmtAvg   },
+  { key: 'runs_3plus', label: '3+',   fmt: fmtCount },
+  { key: 'runs_5plus', label: '5+',   fmt: fmtCount },
+];
+
 export const ROTATION_COLS = [
   { key: 'name',    label: 'Rotation' },
   { key: 'so_pct',  label: 'SO%',    fmt: fmtPct,   cellClass: soColor },
