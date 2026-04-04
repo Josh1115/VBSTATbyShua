@@ -92,9 +92,32 @@ const TEAM_STAT_SECTIONS = [
   },
 ];
 
-// Simple fixed-order (non-sortable) table for rotation breakdowns
+// Sortable table for rotation breakdowns — total row always pinned at bottom
 function MiniTable({ cols, rows }) {
+  const [sortKey, setSortKey] = useState(cols[1]?.key ?? cols[0].key);
+  const [desc,    setDesc]    = useState(true);
+
   if (!rows.length) return null;
+
+  const dataRows  = rows.filter(r => !r.isTotal);
+  const totalRows = rows.filter(r =>  r.isTotal);
+
+  const sorted = [...dataRows].sort((a, b) => {
+    if (sortKey === 'name') {
+      return desc
+        ? (b.name ?? '').localeCompare(a.name ?? '')
+        : (a.name ?? '').localeCompare(b.name ?? '');
+    }
+    const av = a[sortKey] ?? -Infinity;
+    const bv = b[sortKey] ?? -Infinity;
+    return desc ? bv - av : av - bv;
+  });
+
+  function handleSort(key) {
+    if (sortKey === key) setDesc(d => !d);
+    else { setSortKey(key); setDesc(true); }
+  }
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
@@ -103,23 +126,38 @@ function MiniTable({ cols, rows }) {
             {cols.map((c) => (
               <th
                 key={c.key}
-                className={`px-2 py-1.5 font-semibold text-slate-400 whitespace-nowrap ${c.key === 'name' ? 'text-left' : 'text-right'}`}
+                onClick={() => handleSort(c.key)}
+                className={`px-2 py-1.5 font-semibold whitespace-nowrap cursor-pointer select-none ${
+                  c.key === 'name' ? 'text-left' : 'text-right'
+                } ${sortKey === c.key ? 'text-primary' : 'text-slate-400'}`}
               >
                 {c.label}
+                {sortKey === c.key && (
+                  <span className="ml-0.5 text-[10px]">{desc ? '↓' : '↑'}</span>
+                )}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
-            <tr
-              key={row.rot}
-              className={`border-b ${row.isTotal ? 'border-t border-slate-600 font-semibold text-white' : 'border-slate-800/60 ' + (i % 2 === 0 ? '' : 'bg-slate-900/30')}`}
-            >
+          {sorted.map((row, i) => (
+            <tr key={row.rot} className={`border-b border-slate-800/60 ${i % 2 !== 0 ? 'bg-slate-900/30' : ''}`}>
               {cols.map((c) => (
                 <td
                   key={c.key}
-                  className={`px-2 py-1.5 tabular-nums ${c.key === 'name' ? 'text-left text-slate-300' : 'text-right text-slate-300'}`}
+                  className={`px-2 py-1.5 tabular-nums text-slate-300 ${c.key === 'name' ? 'text-left' : 'text-right'}`}
+                >
+                  {c.fmt ? c.fmt(row[c.key]) : (row[c.key] ?? '—')}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {totalRows.map(row => (
+            <tr key={row.rot} className="border-t border-slate-600 font-semibold text-white">
+              {cols.map((c) => (
+                <td
+                  key={c.key}
+                  className={`px-2 py-1.5 tabular-nums ${c.key === 'name' ? 'text-left' : 'text-right'}`}
                 >
                   {c.fmt ? c.fmt(row[c.key]) : (row[c.key] ?? '—')}
                 </td>
