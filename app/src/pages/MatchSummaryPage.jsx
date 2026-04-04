@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useUiStore, selectShowToast } from '../store/uiStore';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { computeMatchStats,
@@ -385,6 +386,122 @@ const ShareCard = ({ cardRef, match, sets, stats, fmtDate }) => {
   );
 };
 
+// ── Scouting auto-populate ───────────────────────────────────────────────────
+
+const TENDENCY_ICONS = {
+  serve_target:      '🎯',
+  attack_pattern:    '⚡',
+  defense_style:     '🛡️',
+  rotation_strength: '💪',
+  rotation_weakness: '⚠️',
+  note:              '📝',
+};
+
+function generateScoutingSuggestions(stats) {
+  const suggestions = [];
+  if (!stats) return suggestions;
+
+  const opp  = stats.opp  ?? {};
+  const rots = stats.rotation?.rotations ?? {};
+
+  // Attack output
+  if ((opp.k ?? 0) > 0 || (opp.ae ?? 0) > 0) {
+    const aeStr = (opp.ae ?? 0) > 0 ? `, ${opp.ae} AE` : '';
+    suggestions.push({ type: 'attack_pattern', value: `${opp.k ?? 0} kills${aeStr}` });
+  }
+
+  // Block presence
+  if ((opp.blk ?? 0) >= 2) {
+    suggestions.push({ type: 'defense_style', value: `${opp.blk} solo block${opp.blk !== 1 ? 's' : ''}` });
+  }
+
+  // Serving aces / errors
+  if ((opp.ace ?? 0) >= 1) {
+    const seStr = (opp.se ?? 0) > 0 ? `, ${opp.se} serve err` : '';
+    suggestions.push({ type: 'serve_target', value: `${opp.ace} ace${opp.ace !== 1 ? 's' : ''} on us${seStr}` });
+  }
+
+  // Rotation strength / weakness (need ≥ 3 serve-receive opportunities)
+  const rotRows = Object.entries(rots)
+    .map(([n, r]) => ({ n, ...r }))
+    .filter(r => (r.so_opp ?? 0) >= 3);
+
+  if (rotRows.length >= 2) {
+    const sorted = [...rotRows].sort((a, b) => (a.so_pct ?? 0) - (b.so_pct ?? 0));
+    const worst  = sorted[0];
+    const best   = sorted[sorted.length - 1];
+
+    if (worst.so_pct != null) {
+      const pct = Math.round(worst.so_pct * 100);
+      suggestions.push({ type: 'rotation_strength', value: `R${worst.n} held us to ${pct}% SR (${worst.so_win}/${worst.so_opp})` });
+    }
+    if (best.n !== worst.n && best.so_pct != null) {
+      const pct = Math.round(best.so_pct * 100);
+      suggestions.push({ type: 'rotation_weakness', value: `R${best.n} — we sideout ${pct}% (${best.so_win}/${best.so_opp})` });
+    }
+  }
+
+  return suggestions;
+}
+
+function ScoutingReviewModal({ oppName, matchId, suggestions, onSave, onSkip }) {
+  const [items,  setItems]  = useState(() => suggestions.map((s, i) => ({ ...s, _id: i, checked: true })));
+  const [saving, setSaving] = useState(false);
+
+  const toggle    = (id)        => setItems(p => p.map(s => s._id === id ? { ...s, checked: !s.checked } : s));
+  const editValue = (id, value) => setItems(p => p.map(s => s._id === id ? { ...s, value } : s));
+
+  const valid = items.filter(s => s.checked && s.value.trim());
+
+  async function handleSave() {
+    setSaving(true);
+    try { await onSave(valid); } finally { setSaving(false); }
+  }
+
+  return (
+    <Modal
+      title={`Scout: ${oppName}`}
+      onClose={onSkip}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onSkip}>Skip</Button>
+          <Button onClick={handleSave} disabled={saving || !valid.length}>
+            {saving ? 'Saving…' : `Save ${valid.length} note${valid.length !== 1 ? 's' : ''}`}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-400 mb-3">
+        Auto-generated from this match. Uncheck or edit before saving.
+      </p>
+      <div className="space-y-2">
+        {items.map(item => (
+          <div
+            key={item._id}
+            className={`flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer select-none transition-opacity ${
+              item.checked ? 'bg-surface' : 'bg-slate-900/40 opacity-50'
+            }`}
+            onClick={() => toggle(item._id)}
+          >
+            <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
+              item.checked ? 'bg-primary border-primary' : 'border-slate-600'
+            }`}>
+              {item.checked && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
+            </div>
+            <span className="text-base leading-none">{TENDENCY_ICONS[item.type] ?? '📝'}</span>
+            <input
+              className="flex-1 bg-transparent text-sm text-white focus:outline-none min-w-0"
+              value={item.value}
+              onChange={e => { e.stopPropagation(); editValue(item._id, e.target.value); }}
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 export function MatchSummaryPage() {
   const { matchId } = useParams();
   const navigate = useNavigate();
@@ -421,6 +538,12 @@ export function MatchSummaryPage() {
   const [editConf,      setEditConf]      = useState('non-con');
   const [editMatchType, setEditMatchType] = useState('reg-season');
   const [editSaving,    setEditSaving]    = useState(false);
+
+  // Scouting auto-populate
+  const showToast = useUiStore(selectShowToast);
+  const [scoutSuggestions, setScoutSuggestions] = useState([]);
+  const [showScoutPrompt,  setShowScoutPrompt]  = useState(false);
+  const [showScoutModal,   setShowScoutModal]   = useState(false);
 
   // Match + sets from Dexie (live)
   const match = useLiveQuery(() => db.matches.get(id), [id]);
@@ -459,6 +582,40 @@ export function MatchSummaryPage() {
       })
       .finally(() => setLoading(false));
   }, [id, statsVersion]);
+
+  // Trigger scouting prompt once after stats load for complete matches
+  useEffect(() => {
+    if (!stats || !match || match.status !== 'complete') return;
+    if (!match.opponent_id) return;
+    if (localStorage.getItem(`vbstat_scout_${id}`)) return;
+    const suggestions = generateScoutingSuggestions(stats);
+    if (!suggestions.length) return;
+    setScoutSuggestions(suggestions);
+    setShowScoutPrompt(true);
+  }, [stats, match, id]);
+
+  function dismissScoutPrompt() {
+    localStorage.setItem(`vbstat_scout_${id}`, '1');
+    setShowScoutPrompt(false);
+    setShowScoutModal(false);
+  }
+
+  async function handleScoutSave(items) {
+    const now = new Date().toISOString();
+    await Promise.all(
+      items.map(item =>
+        db.opp_tendencies.add({
+          opp_id:     match.opponent_id,
+          match_id:   id,
+          type:       item.type,
+          value:      item.value.trim(),
+          created_at: now,
+        })
+      )
+    );
+    dismissScoutPrompt();
+    showToast(`${items.length} scouting note${items.length !== 1 ? 's' : ''} saved`, 'success');
+  }
 
   const displayStats = useMemo(() => {
     if (!stats) return null;
@@ -831,6 +988,22 @@ export function MatchSummaryPage() {
 
           {/* Tab bar */}
           <TabBar tabs={TABS} active={tab} onChange={setTab} />
+
+          {/* Tab position dots */}
+          <div className="flex justify-center gap-1 py-2">
+            {TAB_VALUES.map((v) => (
+              <button
+                key={v}
+                onClick={() => setTab(v)}
+                className={`rounded-full transition-all duration-200 ${
+                  v === tab
+                    ? 'w-4 h-1.5 bg-primary'
+                    : 'w-1.5 h-1.5 bg-slate-700 hover:bg-slate-500'
+                }`}
+                aria-label={v}
+              />
+            ))}
+          </div>
 
           {/* Tab content */}
           <div key={tab} className="p-4 md:p-6 animate-fade-in" {...swipeHandlers}>
@@ -1341,6 +1514,42 @@ export function MatchSummaryPage() {
           displayStats={displayStats}
           onCorrect={() => setStatsVersion((v) => v + 1)}
           onClose={() => setShowCorrections(false)}
+        />
+      )}
+
+      {/* Scouting auto-populate prompt */}
+      {showScoutPrompt && !showScoutModal && match && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 animate-slide-up">
+          <div className="bg-slate-800 border-t border-slate-700 px-4 py-3 flex items-center gap-3 safe-area-inset-bottom">
+            <span className="text-xl shrink-0">📋</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-white truncate">
+                Update scouting for {match.opponent_name}?
+              </p>
+              <p className="text-xs text-slate-400">
+                {scoutSuggestions.length} note{scoutSuggestions.length !== 1 ? 's' : ''} generated from this match
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={dismissScoutPrompt}
+                className="text-xs text-slate-400 hover:text-white transition-colors px-2 py-1"
+              >
+                Skip
+              </button>
+              <Button size="sm" onClick={() => setShowScoutModal(true)}>Review</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showScoutModal && match && (
+        <ScoutingReviewModal
+          oppName={match.opponent_name ?? 'Opponent'}
+          matchId={id}
+          suggestions={scoutSuggestions}
+          onSave={handleScoutSave}
+          onSkip={dismissScoutPrompt}
         />
       )}
     </div>
