@@ -68,7 +68,12 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
   const sorted = [...(players ?? [])].sort((a, b) => (a.jersey_number ?? 0) - (b.jersey_number ?? 0));
   const allOn  = sorted.length > 0 && sorted.every((p) => checked.has(p.id));
 
-  const summaryTotalPasses = (allSessions ?? []).reduce((s, sess) => s + (sess.data?.totalPasses ?? 0), 0);
+  const summaryTotalPasses = (allSessions ?? []).reduce((s, sess) => {
+    const tp = sess.data?.totalPasses;
+    if (tp != null && tp > 0) return s + tp;
+    // fall back to counting passes arrays directly (handles sessions missing totalPasses)
+    return s + (sess.data?.players ?? []).reduce((a, p) => a + (p.passes?.length ?? 0), 0);
+  }, 0);
   const summaryAPRNum = summaryTotalPasses
     ? (allSessions ?? []).reduce((s, sess) => {
         const passes = (sess.data?.players ?? []).flatMap((p) => p.passes ?? []);
@@ -91,7 +96,7 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
       }
     }
     return Object.values(map)
-      .filter((p) => p.passes.length >= 10)
+      .filter((p) => p.passes.length >= 5)
       .map((p) => ({ ...p, apr: p.passes.reduce((a, b) => a + b, 0) / p.passes.length }))
       .sort((a, b) => b.apr - a.apr)
       .slice(0, 5);
