@@ -212,9 +212,9 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
                   <div key={p.id} className="flex items-center gap-2 py-1">
                     <span className="text-[10px] text-slate-600 w-3 tabular-nums">{i + 1}</span>
                     <span className="text-xs text-slate-400 font-mono w-8">#{p.jersey}</span>
-                    <span className="text-sm font-semibold flex-1 truncate">{p.name.split(' ').length > 1 ? `${p.name[0]}. ${p.name.split(' ').pop()}` : p.name}</span>
+                    <span className="text-sm font-semibold flex-1 truncate">{(() => { const n = p.name ?? ''; const parts = n.split(' '); return parts.length > 1 ? `${parts[0][0]}. ${parts[parts.length - 1]}` : n; })()}</span>
                     <span className="text-xs text-slate-500 tabular-nums">{p.passes.length} reps</span>
-                    <span className="text-sm font-black font-mono text-primary tabular-nums w-10 text-right">{p.apr.toFixed(2)}</span>
+                    <span className="text-sm font-black font-mono text-primary tabular-nums w-10 text-right">{p.apr != null ? p.apr.toFixed(2) : '—'}</span>
                   </div>
                 ))}
               </div>
@@ -231,7 +231,7 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
                   <span className="text-xs text-slate-500 flex-shrink-0">{fmtDateShort(s.date)}</span>
                 </div>
                 <div className="text-xs text-slate-400 mt-0.5">
-                  {s.data.overallAPR} APR · {s.data.totalPasses} passes
+                  {s.data?.overallAPR ?? '—'} APR · {s.data?.totalPasses ?? 0} passes
                 </div>
               </div>
             </SwipeableMatchCard>
@@ -275,7 +275,7 @@ function SessionView({ players: initPlayers, teamId }) {
   }
 
   async function handleSave() {
-    const label = players.map((p) => `#${p.jersey} ${p.name.split(' ').pop()}`).join(', ');
+    const label = players.map((p) => `#${p.jersey ?? '?'} ${(p.name ?? 'Player').split(' ').pop()}`).join(', ');
     await db.practice_sessions.add({
       tool_type: 'serve_receive',
       team_id: teamId ?? null,
@@ -325,7 +325,7 @@ function SessionView({ players: initPlayers, teamId }) {
               <div className="flex items-baseline justify-between">
                 <div className="min-w-0">
                   <span className="text-xs text-slate-400 font-mono mr-1">#{player.jersey}</span>
-                  <span className="font-semibold text-sm">{player.name.split(' ').pop()}</span>
+                  <span className="font-semibold text-sm">{(player.name ?? 'Player').split(' ').pop()}</span>
                 </div>
                 <div className="text-right flex-shrink-0 ml-1">
                   <span className="text-lg font-black font-mono text-primary">{apr != null ? apr.toFixed(2) : '—'}</span>

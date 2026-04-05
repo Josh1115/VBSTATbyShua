@@ -586,7 +586,7 @@ export function ReportsPage() {
           description={`${stats.totalMatchCount} match${stats.totalMatchCount !== 1 ? 'es' : ''} in this season — none match the current filters`}
           action={
             <button
-              onClick={() => { setConference(''); setLocation(''); setMatchType(''); setSelectedMatchIds(null); }}
+              onClick={() => { setConference(''); setLocation(''); setMatchTypes([]); setSelectedMatchIds(null); }}
               className="mt-1 text-primary text-sm underline underline-offset-2"
             >
               Clear filters
