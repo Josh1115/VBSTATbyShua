@@ -91,12 +91,12 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
     const map = {};
     for (const sess of allSessions ?? []) {
       for (const p of sess.data?.players ?? []) {
-        if (!map[p.id]) map[p.id] = { id: p.id, name: p.name, jersey: p.jersey, passes: [] };
+        if (!map[p.id]) map[p.id] = { id: p.id, name: p.name, jersey: p.jersey, position: p.position ?? null, passes: [] };
         map[p.id].passes.push(...(p.passes ?? []));
       }
     }
     return Object.values(map)
-      .filter((p) => p.passes.length >= 5)
+      .filter((p) => p.position !== 'MB' && p.passes.length >= 10)
       .map((p) => ({ ...p, apr: p.passes.reduce((a, b) => a + b, 0) / p.passes.length }))
       .sort((a, b) => b.apr - a.apr)
       .slice(0, 5);
@@ -250,6 +250,7 @@ function SessionView({ players: initPlayers, teamId }) {
       id: p.id,
       name: p.name,
       jersey: p.jersey_number ?? p.jersey,
+      position: p.position ?? null,
       passes: p.passes ?? [],
     }))
   );
