@@ -760,7 +760,7 @@ export async function computeSeasonStats(seasonId, filters = {}) {
       (!filters.matchIds?.length    || filters.matchIds.includes(m.id)) &&
       (!filters.conference          || m.conference === filters.conference) &&
       (!filters.location            || m.location   === filters.location)  &&
-      (!filters.matchType?.length   || filters.matchType.includes(m.match_type))
+      (!filters.matchType?.length   || filters.matchType.includes(m.match_type ?? 'reg-season'))
     );
   }
 
