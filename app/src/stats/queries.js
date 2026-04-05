@@ -59,6 +59,12 @@ export const getOppScoredForMatches = async (matchIds) => {
     .reduce((sum, s) => sum + (s.opp_score ?? 0), 0);
 };
 
+// Timeouts for multiple matches
+export const getTimeoutsForMatches = async (matchIds) => {
+  if (!matchIds.length) return [];
+  return db.timeouts.where('match_id').anyOf(matchIds).toArray();
+};
+
 // Rallies for multiple matches — used by season-level stats
 export const getRalliesForMatches = async (matchIds) => {
   if (!matchIds.length) return [];

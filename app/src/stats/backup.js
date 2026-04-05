@@ -1,4 +1,5 @@
 import { db } from '../db/schema';
+import { STORAGE_KEYS } from '../utils/storage';
 
 const BACKUP_VERSION = 1;
 
@@ -12,6 +13,9 @@ const REQUIRED_TABLES = [
 const OPTIONAL_TABLES = ['saved_lineups', 'records', 'practice_sessions'];
 
 const ALL_TABLES = [...REQUIRED_TABLES, ...OPTIONAL_TABLES];
+
+// localStorage keys to include in the backup. LAST_SET_SCORE is transient runtime state — excluded.
+const SETTINGS_KEYS = Object.values(STORAGE_KEYS).filter((k) => k !== STORAGE_KEYS.LAST_SET_SCORE);
 
 // ── Migration ──────────────────────────────────────────────────────────────────
 // Add cases here as BACKUP_VERSION increases.
@@ -35,6 +39,12 @@ export async function exportBackup() {
   for (const table of ALL_TABLES) {
     data[table] = await db[table].toArray();
   }
+  const settings = {};
+  for (const key of SETTINGS_KEYS) {
+    const v = localStorage.getItem(key);
+    if (v !== null) settings[key] = v;
+  }
+  data.settings = settings;
 
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -80,4 +90,11 @@ export async function importBackup(file) {
       }
     }
   });
+
+  // Restore settings to localStorage (after DB transaction succeeds)
+  if (data.settings && typeof data.settings === 'object') {
+    for (const [key, value] of Object.entries(data.settings)) {
+      if (typeof value === 'string') localStorage.setItem(key, value);
+    }
+  }
 }

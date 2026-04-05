@@ -2,6 +2,7 @@ import {
   getContactsForMatch, getRalliesForMatch, getSetsPlayedCount,
   getContactsForMatches, getMatchesForSeason, getRalliesForMatches,
   getPlayerPositionsForMatches, getBatchSetsPlayedCount, getOppScoredForMatches,
+  getTimeoutsForMatches,
 } from './queries';
 import { POSITION_MULTIPLIERS } from '../constants';
 
@@ -754,24 +755,25 @@ export async function computeSeasonStats(seasonId, filters = {}) {
 
   const totalMatchCount = matches.length;
 
-  if (filters.matchIds?.length || filters.conference || filters.location || filters.matchType) {
+  if (filters.matchIds?.length || filters.conference || filters.location || filters.matchType?.length) {
     matches = matches.filter(m =>
-      (!filters.matchIds?.length || filters.matchIds.includes(m.id)) &&
-      (!filters.conference       || m.conference === filters.conference) &&
-      (!filters.location         || m.location   === filters.location)  &&
-      (!filters.matchType        || m.match_type === filters.matchType)
+      (!filters.matchIds?.length    || filters.matchIds.includes(m.id)) &&
+      (!filters.conference          || m.conference === filters.conference) &&
+      (!filters.location            || m.location   === filters.location)  &&
+      (!filters.matchType?.length   || filters.matchType.includes(m.match_type))
     );
   }
 
   if (!matches.length) return { empty: true, totalMatchCount };
 
   const matchIds = matches.map(m => m.id);
-  const [contacts, rallies, setsPerMatch, playerPositions, oppScored] = await Promise.all([
+  const [contacts, rallies, setsPerMatch, playerPositions, oppScored, timeouts] = await Promise.all([
     getContactsForMatches(matchIds),
     getRalliesForMatches(matchIds),
     getBatchSetsPlayedCount(matchIds),
     getPlayerPositionsForMatches(matchIds),
     getOppScoredForMatches(matchIds),
+    getTimeoutsForMatches(matchIds),
   ]);
   const setsPlayed = Object.values(setsPerMatch).reduce((a, b) => a + b, 0);
 
@@ -792,6 +794,7 @@ export async function computeSeasonStats(seasonId, filters = {}) {
     freeDigWin:       computeFreeDigWin(contacts, rallies, rallyMap),
     runs:             computeRunsByRotation(rallies),
     pointQuality:     computePointQuality(contacts),
+    timeoutEffect:    computeTimeoutEffectiveness(timeouts, rallies),
     trends:           computePlayerTrends(matches, contacts, setsPerMatch, playerPositions),
     setsPlayed,
     matchCount:       matchIds.length,
@@ -983,6 +986,48 @@ export function computeMatchWinProb(pCurrentSet, pFutureSet, ourSets, oppSets, s
   const winAfter  = dp(ourSets + 1, oppSets);
   const loseAfter = dp(ourSets, oppSets + 1);
   return pCurrentSet * winAfter + (1 - pCurrentSet) * loseAfter;
+}
+
+/**
+ * Timeout effectiveness — how many of the next 3 rallies did we win after each timeout?
+ * timeouts: array of { set_id, rally_number, our_score, opp_score, side }
+ * rallies:  array of { set_id, rally_number, point_winner }
+ * Returns { us: { count, win3, total3, win_pct }, them: { count, win3, total3, win_pct } }
+ */
+export function computeTimeoutEffectiveness(timeouts, rallies) {
+  // Index rallies by set_id → sorted array for fast range lookup
+  const bySet = {};
+  for (const r of rallies) {
+    (bySet[r.set_id] ??= []).push(r);
+  }
+  for (const arr of Object.values(bySet)) {
+    arr.sort((a, b) => a.rally_number - b.rally_number);
+  }
+
+  const result = {
+    us:   { count: 0, win3: 0, total3: 0 },
+    them: { count: 0, win3: 0, total3: 0 },
+  };
+
+  for (const to of timeouts) {
+    const side = to.side === 'us' ? 'us' : 'them';
+    result[side].count++;
+    const setRallies = bySet[to.set_id] ?? [];
+    // Find the 3 rallies immediately after this timeout
+    const after = setRallies
+      .filter(r => r.rally_number > to.rally_number)
+      .slice(0, 3);
+    for (const r of after) {
+      result[side].total3++;
+      if (r.point_winner === 'us') result[side].win3++;
+    }
+  }
+
+  const pct = (s) => s.total3 > 0 ? s.win3 / s.total3 : null;
+  return {
+    us:   { ...result.us,   win_pct: pct(result.us)   },
+    them: { ...result.them, win_pct: pct(result.them) },
+  };
 }
 
 export function computeRallyHistogram(contacts) {

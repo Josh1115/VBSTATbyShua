@@ -170,6 +170,70 @@ function MiniTable({ cols, rows }) {
   );
 }
 
+function XPassRatingTable({ title, rows, cols }) {
+  const [sortKey, setSortKey] = useState(null);
+  const [desc,    setDesc]    = useState(true);
+
+  function handleSort(key) {
+    if (sortKey === key) setDesc(d => !d);
+    else { setSortKey(key); setDesc(true); }
+  }
+
+  const sorted = sortKey
+    ? [...rows].sort((a, b) => {
+        if (sortKey === 'name') {
+          return desc
+            ? (b.name ?? '').localeCompare(a.name ?? '')
+            : (a.name ?? '').localeCompare(b.name ?? '');
+        }
+        const av = a[sortKey] ?? -Infinity;
+        const bv = b[sortKey] ?? -Infinity;
+        return desc ? bv - av : av - bv;
+      })
+    : rows;
+
+  return (
+    <div className="bg-surface rounded-xl p-3">
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">{title}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-slate-700">
+              <th
+                onClick={() => handleSort('name')}
+                className={`px-2 py-1.5 text-left font-semibold cursor-pointer select-none whitespace-nowrap ${sortKey === 'name' ? 'text-primary' : 'text-slate-400'}`}
+              >
+                Player{sortKey === 'name' && <span className="ml-0.5 text-[10px]">{desc ? '↓' : '↑'}</span>}
+              </th>
+              {cols.map(c => (
+                <th
+                  key={c.key}
+                  onClick={() => handleSort(c.key)}
+                  className={`px-2 py-1.5 text-right font-semibold cursor-pointer select-none whitespace-nowrap ${sortKey === c.key ? 'text-primary' : 'text-slate-400'}`}
+                >
+                  {c.label}{sortKey === c.key && <span className="ml-0.5 text-[10px]">{desc ? '↓' : '↑'}</span>}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r, i) => (
+              <tr key={r.id} className={`border-b border-slate-800/60 ${i % 2 !== 0 ? 'bg-slate-900/30' : ''}`}>
+                <td className="px-2 py-1.5 text-slate-300">{r.name}</td>
+                {cols.map(c => (
+                  <td key={c.key} className="px-2 py-1.5 text-right tabular-nums text-slate-300">
+                    {c.fmt(r[c.key])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function SectionHeader({ children }) {
   return <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-2">{children}</h3>;
 }
@@ -712,6 +776,37 @@ export function ReportsPage() {
                   );
                 })()}
 
+                {/* Timeout Effectiveness */}
+                {stats.timeoutEffect && (stats.timeoutEffect.us.count > 0 || stats.timeoutEffect.them.count > 0) && (
+                  <div className="bg-surface rounded-xl p-3 space-y-2">
+                    <SectionHeader>Timeout Effectiveness</SectionHeader>
+                    <p className="text-[11px] text-slate-500 -mt-1 mb-2">Win % in the 3 rallies immediately following each timeout</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { label: 'Our Timeouts', d: stats.timeoutEffect.us   },
+                        { label: 'Opp Timeouts', d: stats.timeoutEffect.them },
+                      ].map(({ label, d }) => {
+                        const pct  = d.win_pct != null ? Math.round(d.win_pct * 100) : null;
+                        const color = pct == null ? 'text-slate-400'
+                          : pct >= 55 ? 'text-emerald-400'
+                          : pct >= 40 ? 'text-yellow-400'
+                          : 'text-red-400';
+                        return (
+                          <div key={label} className="bg-slate-800/60 rounded-lg p-3 text-center">
+                            <div className="text-[11px] text-slate-400 mb-1">{label}</div>
+                            <div className={`text-2xl font-black ${color}`}>
+                              {pct != null ? `${pct}%` : '—'}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-1">
+                              {d.win3}/{d.total3} pts · {d.count} TO{d.count !== 1 ? 's' : ''}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Team vs Opponents comparison */}
                 {stats.opp && (
                   <div>
@@ -803,56 +898,24 @@ export function ReportsPage() {
                       if (!xkRows.length) return null;
                       return (
                         <>
-                          <div className="bg-surface rounded-xl p-3">
-                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Kill% by Pass Rating (xK%)</p>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="border-b border-slate-700">
-                                    <th className="px-2 py-1.5 text-left font-semibold text-slate-400">Player</th>
-                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK1%</th>
-                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK2%</th>
-                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xK3%</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {xkRows.map((r, i) => (
-                                    <tr key={r.id} className={`border-b border-slate-800/60 ${i % 2 !== 0 ? 'bg-slate-900/30' : ''}`}>
-                                      <td className="px-2 py-1.5 text-slate-300">{r.name}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{fmtPct(r.xk1)}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{fmtPct(r.xk2)}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{fmtPct(r.xk3)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                          <div className="bg-surface rounded-xl p-3">
-                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Hit% by Pass Rating (xHIT%)</p>
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-xs">
-                                <thead>
-                                  <tr className="border-b border-slate-700">
-                                    <th className="px-2 py-1.5 text-left font-semibold text-slate-400">Player</th>
-                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT1</th>
-                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT2</th>
-                                    <th className="px-2 py-1.5 text-right font-semibold text-slate-400">xHIT3</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {xkRows.map((r, i) => (
-                                    <tr key={r.id} className={`border-b border-slate-800/60 ${i % 2 !== 0 ? 'bg-slate-900/30' : ''}`}>
-                                      <td className="px-2 py-1.5 text-slate-300">{r.name}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{fmtHitting(r.xhit1)}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{fmtHitting(r.xhit2)}</td>
-                                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-300">{fmtHitting(r.xhit3)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
+                          <XPassRatingTable
+                            title="Kill% by Pass Rating (xK%)"
+                            rows={xkRows}
+                            cols={[
+                              { key: 'xk1', label: 'xK1%',  fmt: fmtPct     },
+                              { key: 'xk2', label: 'xK2%',  fmt: fmtPct     },
+                              { key: 'xk3', label: 'xK3%',  fmt: fmtPct     },
+                            ]}
+                          />
+                          <XPassRatingTable
+                            title="Hit% by Pass Rating (xHIT%)"
+                            rows={xkRows}
+                            cols={[
+                              { key: 'xhit1', label: 'xHIT1', fmt: fmtHitting },
+                              { key: 'xhit2', label: 'xHIT2', fmt: fmtHitting },
+                              { key: 'xhit3', label: 'xHIT3', fmt: fmtHitting },
+                            ]}
+                          />
                         </>
                       );
                     })()}

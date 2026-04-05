@@ -16,6 +16,31 @@ const RATING_BG = {
 
 const DRAFT_KEY = 'vbstat_draft_serve_receive';
 
+const RATING_COLOR = { 0: 'bg-red-600', 1: 'bg-orange-500', 2: 'bg-yellow-500', 3: 'bg-emerald-500' };
+
+function RatingDistBar({ counts, total }) {
+  const max = Math.max(...counts, 1);
+  return (
+    <div className="mt-3 space-y-1.5">
+      {[0, 1, 2, 3].map((r) => {
+        const pct = total > 0 ? Math.round((counts[r] / total) * 100) : 0;
+        return (
+          <div key={r} className="flex items-center gap-2">
+            <span className={`w-5 h-5 rounded text-xs font-black text-white flex items-center justify-center flex-shrink-0 ${RATING_COLOR[r]}`}>{r}</span>
+            <div className="flex-1 bg-slate-700 rounded-full h-3 overflow-hidden">
+              <div
+                className={`${RATING_COLOR[r]} h-full rounded-full transition-all duration-500`}
+                style={{ width: `${(counts[r] / max) * 100}%` }}
+              />
+            </div>
+            <span className="text-xs text-slate-400 tabular-nums w-20 text-right">{counts[r]} · {pct}%</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Setup screen ────────────────────────────────────────────────────────────
 
 function SetupView({ onStart, onResume, onDiscardDraft }) {
@@ -51,6 +76,26 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
       }, 0) / summaryTotalPasses
     : null;
   const summaryAPR = summaryAPRNum !== null ? summaryAPRNum.toFixed(2) : '—';
+
+  const ratingCounts = [0, 1, 2, 3].map((r) =>
+    (allSessions ?? []).reduce((s, sess) =>
+      s + (sess.data?.players ?? []).flatMap((p) => p.passes ?? []).filter((v) => v === r).length, 0)
+  );
+
+  const topPassers = (() => {
+    const map = {};
+    for (const sess of allSessions ?? []) {
+      for (const p of sess.data?.players ?? []) {
+        if (!map[p.id]) map[p.id] = { id: p.id, name: p.name, jersey: p.jersey, passes: [] };
+        map[p.id].passes.push(...(p.passes ?? []));
+      }
+    }
+    return Object.values(map)
+      .filter((p) => p.passes.length >= 10)
+      .map((p) => ({ ...p, apr: p.passes.reduce((a, b) => a + b, 0) / p.passes.length }))
+      .sort((a, b) => b.apr - a.apr)
+      .slice(0, 5);
+  })();
 
   function toggle(id) {
     setChecked((prev) => {
@@ -147,11 +192,28 @@ function SetupView({ onStart, onResume, onDiscardDraft }) {
       {/* Recent Sessions */}
       {recentSessions?.length > 0 && (
         <div>
-          <div className="px-4 py-3 bg-slate-800/60 rounded-xl mb-2 flex justify-between items-center">
-            <span className="text-xs text-slate-400 uppercase tracking-wide font-semibold">All Sessions</span>
-            <span className="text-sm text-slate-200 font-semibold tabular-nums">
-              {summaryAPR} APR · {summaryTotalPasses} reps
-            </span>
+          <div className="px-4 py-3 bg-slate-800/60 rounded-xl mb-2">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-slate-400 uppercase tracking-wide font-semibold">All Sessions</span>
+              <span className="text-sm text-slate-200 font-semibold tabular-nums">
+                {summaryAPR} APR · {summaryTotalPasses} reps
+              </span>
+            </div>
+            {summaryTotalPasses > 0 && <RatingDistBar counts={ratingCounts} total={summaryTotalPasses} />}
+            {topPassers.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-700">
+                <div className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1.5">Top Passers</div>
+                {topPassers.map((p, i) => (
+                  <div key={p.id} className="flex items-center gap-2 py-1">
+                    <span className="text-[10px] text-slate-600 w-3 tabular-nums">{i + 1}</span>
+                    <span className="text-xs text-slate-400 font-mono w-8">#{p.jersey}</span>
+                    <span className="text-sm font-semibold flex-1 truncate">{p.name.split(' ').length > 1 ? `${p.name[0]}. ${p.name.split(' ').pop()}` : p.name}</span>
+                    <span className="text-xs text-slate-500 tabular-nums">{p.passes.length} reps</span>
+                    <span className="text-sm font-black font-mono text-primary tabular-nums w-10 text-right">{p.apr.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="px-1 pb-1.5">
             <span className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Recent Sessions</span>

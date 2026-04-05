@@ -1,6 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
+import {
+  RadarChart, Radar, PolarGrid, PolarAngleAxis,
+  PolarRadiusAxis, Tooltip, ResponsiveContainer,
+} from 'recharts';
 import { db } from '../db/schema';
 import { computePlayerStats, computePlayerTrends } from '../stats/engine';
 import {
@@ -9,7 +13,7 @@ import {
   getPlayerPositionsForMatches,
 } from '../stats/queries';
 import { TAB_COLUMNS, SERVING_COLS } from '../stats/columns';
-import { fmtCount, fmtHitting, fmtPassRating, fmtVER } from '../stats/formatters';
+import { fmtCount, fmtHitting, fmtPassRating, fmtPct, fmtVER } from '../stats/formatters';
 import { PageHeader } from '../components/layout/PageHeader';
 import { TabBar } from '../components/ui/Tab';
 import { StatTable } from '../components/stats/StatTable';
@@ -18,6 +22,123 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Badge } from '../components/ui/Badge';
 
 const POS_COLOR = { S: 'blue', OH: 'orange', OPP: 'orange', MB: 'green', L: 'gray', DS: 'gray', RS: 'orange' };
+
+// ── Report Card ──────────────────────────────────────────────────────────────
+
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function gradeScore(score) {
+  if (score >= 85) return { letter: 'A', color: 'text-emerald-400' };
+  if (score >= 70) return { letter: 'B', color: 'text-blue-400'    };
+  if (score >= 50) return { letter: 'C', color: 'text-yellow-400'  };
+  if (score >= 30) return { letter: 'D', color: 'text-orange-400'  };
+  return                  { letter: 'F', color: 'text-red-400'     };
+}
+
+function PlayerReportCard({ row }) {
+  const tiles = [
+    row.sa > 0 && {
+      label: 'Serving',
+      display: fmtPct(row.ace_pct),
+      sub: 'ACE%',
+      score: clamp(((row.ace_pct ?? 0) / 0.12) * 100, 0, 100),
+      radar: clamp(((row.ace_pct ?? 0) / 0.12) * 100, 0, 100),
+    },
+    row.pa > 0 && {
+      label: 'Passing',
+      display: fmtPassRating(row.apr),
+      sub: 'APR',
+      score: clamp(((row.apr ?? 0) / 2.5) * 100, 0, 100),
+      radar: clamp(((row.apr ?? 0) / 2.5) * 100, 0, 100),
+    },
+    row.ta > 0 && {
+      label: 'Attacking',
+      display: fmtHitting(row.hit_pct),
+      sub: 'HIT%',
+      score: clamp((((row.hit_pct ?? -0.1) + 0.1) / 0.45) * 100, 0, 100),
+      radar: clamp((((row.hit_pct ?? -0.1) + 0.1) / 0.45) * 100, 0, 100),
+    },
+    row.dig > 0 && {
+      label: 'Defense',
+      display: fmtCount(row.dips != null ? +row.dips.toFixed(1) : null),
+      sub: 'DIG/Set',
+      score: clamp(((row.dips ?? 0) / 4) * 100, 0, 100),
+      radar: clamp(((row.dips ?? 0) / 4) * 100, 0, 100),
+    },
+    (row.bs > 0 || row.ba > 0) && {
+      label: 'Blocking',
+      display: fmtCount(row.bps != null ? +row.bps.toFixed(2) : null),
+      sub: 'BLK/Set',
+      score: clamp(((row.bps ?? 0) / 1.5) * 100, 0, 100),
+      radar: clamp(((row.bps ?? 0) / 1.5) * 100, 0, 100),
+    },
+    row.ast > 0 && {
+      label: 'Setting',
+      display: fmtCount(row.aps != null ? +row.aps.toFixed(1) : null),
+      sub: 'AST/Set',
+      score: clamp(((row.aps ?? 0) / 10) * 100, 0, 100),
+      radar: clamp(((row.aps ?? 0) / 10) * 100, 0, 100),
+    },
+  ].filter(Boolean);
+
+  const verColor = row.ver == null ? 'text-slate-400'
+    : row.ver >= 6   ? 'text-emerald-400'
+    : row.ver >= 2   ? 'text-blue-400'
+    : row.ver >= -1  ? 'text-yellow-400'
+    : 'text-red-400';
+
+  const radarData = tiles.map(t => ({ dim: t.label, score: Math.round(t.radar) }));
+
+  return (
+    <div className="p-4 space-y-4">
+      {/* VER hero */}
+      <div className="bg-surface rounded-xl p-4 text-center">
+        <div className="text-xs text-slate-400 uppercase tracking-wide mb-1">Volleyball Efficiency Rating</div>
+        <div className={`text-5xl font-black ${verColor}`}>
+          {row.ver != null ? fmtVER(row.ver) : '—'}
+        </div>
+        <div className="text-xs text-slate-500 mt-1">{row.sp ?? 0} sets played · {row.mp ?? 0} matches</div>
+      </div>
+
+      {/* Stat tiles */}
+      {tiles.length > 0 && (
+        <div className="grid grid-cols-2 gap-2">
+          {tiles.map((t) => {
+            const { letter, color } = gradeScore(t.score);
+            return (
+              <div key={t.label} className="bg-surface rounded-xl p-3 flex items-center gap-3">
+                <div className={`text-3xl font-black w-10 text-center shrink-0 ${color}`}>{letter}</div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-white truncate">{t.label}</div>
+                  <div className="text-xs text-slate-400">{t.display} <span className="text-slate-500">{t.sub}</span></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Radar chart */}
+      {radarData.length >= 3 && (
+        <div className="bg-surface rounded-xl p-3">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Skill Profile</p>
+          <ResponsiveContainer width="100%" height={240}>
+            <RadarChart data={radarData} margin={{ top: 8, right: 28, left: 28, bottom: 8 }}>
+              <PolarGrid stroke="#1e293b" />
+              <PolarAngleAxis dataKey="dim" tick={{ fill: '#94a3b8', fontSize: 11 }} />
+              <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} axisLine={false} />
+              <Radar dataKey="score" stroke="#f97316" fill="#f97316" fillOpacity={0.25} dot={{ r: 3, fill: '#f97316' }} />
+              <Tooltip
+                contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 8, fontSize: 12 }}
+                formatter={(v) => [`${v}/100`]}
+              />
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const CHIP = 'px-3 py-1 rounded-full text-xs font-semibold transition-colors';
 const chipClass = (active) =>
@@ -159,8 +280,9 @@ export function PlayerStatsPage() {
 
       <TabBar
         tabs={[
-          { value: 'season', label: 'Season Stats' },
-          { value: 'bygame', label: 'By Game'       },
+          { value: 'season',      label: 'Season Stats' },
+          { value: 'bygame',      label: 'By Game'       },
+          { value: 'report_card', label: 'Report Card'   },
         ]}
         active={mainTab}
         onChange={setMainTab}
@@ -191,6 +313,12 @@ export function PlayerStatsPage() {
               <StatTable columns={currentCols} rows={statRow} />
             </div>
           </div>
+        )
+      ) : mainTab === 'report_card' ? (
+        !stats?.playerRow ? (
+          <EmptyState title="No stats yet" description="Record a match to see the report card." />
+        ) : (
+          <PlayerReportCard row={stats.playerRow} />
         )
       ) : (
         // By Game tab

@@ -530,6 +530,9 @@ export const useMatchStore = create((set, get) => ({
           set({ actionHistory: rest, ourTimeouts: Math.max(0, s.ourTimeouts - 1) });
         else
           set({ actionHistory: rest, oppTimeouts: Math.max(0, s.oppTimeouts - 1) });
+        if (action.timeoutId != null) {
+          db.timeouts.delete(action.timeoutId).catch(() => {});
+        }
         break;
       }
 
@@ -773,8 +776,7 @@ export const useMatchStore = create((set, get) => ({
     const alreadyOnCourt = s.lineup.some((sl) => sl.playerId === inPlayer.id);
     if (alreadyOnCourt) return false;
 
-    // Prevent re-subbing a player pair that has already completed a return sub this set
-    if (s.exhaustedPlayerIds.includes(outPlayerId) || s.exhaustedPlayerIds.includes(inPlayer.id)) return false;
+    // Note: exhaustedPlayerIds is tracked for display only — no hard block on re-subs.
 
     const outPlayer             = s.lineup[slotIdx];
     const prevSubsUsed          = s.subsUsed;
@@ -957,7 +959,7 @@ export const useMatchStore = create((set, get) => ({
     }
   },
 
-  useTimeout: (side) => {
+  useTimeout: async (side) => {
     const s = get();
     if (side === SIDE.US) {
       if (s.ourTimeouts >= NFHS.MAX_TIMEOUTS_PER_SET) return;
@@ -966,7 +968,20 @@ export const useMatchStore = create((set, get) => ({
       if (s.oppTimeouts >= NFHS.MAX_TIMEOUTS_PER_SET) return;
       set({ oppTimeouts: s.oppTimeouts + 1 });
     }
-    pushAction(get, set, { type: 'timeout', side });
+    let timeoutId = null;
+    try {
+      timeoutId = await db.timeouts.add({
+        match_id:     s.matchId,
+        set_id:       s.currentSetId,
+        rally_number: s.rallyCount,
+        our_score:    s.ourScore,
+        opp_score:    s.oppScore,
+        side,
+      });
+    } catch (err) {
+      console.error('[VBStat] timeouts.add failed:', err);
+    }
+    pushAction(get, set, { type: 'timeout', side, timeoutId });
   },
 
   resetCurrentSet: async () => {

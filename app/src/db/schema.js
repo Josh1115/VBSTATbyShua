@@ -2,6 +2,24 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('VBAPPv2');
 
+// v12: add timeouts table for timeout effectiveness tracking.
+db.version(12).stores({
+  rallies:         '++id, set_id, rally_number',
+  sets:            '++id, match_id, set_number',
+  lineups:         '++id, set_id, player_id',
+  substitutions:   '++id, set_id, rally_number',
+  organizations:   '++id, name, type',
+  teams:           '++id, org_id, name',
+  seasons:         '++id, team_id, year',
+  players:         '++id, team_id, is_active',
+  opponents:       '++id, name',
+  saved_lineups:   '++id, team_id',
+  contacts:        '++id, match_id, player_id, action, set_id, rally_id, rotation_num',
+  matches:         '++id, season_id, status, date, opponent_id',
+  opp_tendencies:  '++id, opp_id, match_id',
+  timeouts:        '++id, match_id, set_id',
+});
+
 // v11: add opponent_id index on matches for efficient opponent history queries.
 db.version(11).stores({
   rallies:         '++id, set_id, rally_number',

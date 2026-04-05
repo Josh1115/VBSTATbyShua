@@ -7,15 +7,6 @@ import { db } from '../../db/schema';
 
 const POSITION_OPTIONS = ['OH', 'OPP', 'MB', 'S', 'L', 'DS', 'RS'];
 
-/**
- * Returns eligibility for a bench player.
- * Only hard rule: exhausted players (completed return sub) cannot re-enter.
- * Slot pairing is a *suggestion* shown via ring UI, not a gate.
- */
-function benchEligibility(playerId, exhaustedPlayerIds) {
-  if (exhaustedPlayerIds.includes(playerId)) return 'exhausted';
-  return 'ok';
-}
 
 export function SubstitutionModal({ onClose }) {
   const lineup              = useMatchStore((s) => s.lineup);
@@ -156,7 +147,7 @@ export function SubstitutionModal({ onClose }) {
             {lineup.filter((sl) => sl.playerId).map((sl) => {
               const isExhausted = exhaustedPlayerIds.includes(sl.playerId);
               const isLibero    = sl.playerId === liberoId;
-              const disabled    = isExhausted || isLibero || atMax;
+              const disabled    = isLibero || atMax;
               const selected    = outPlayerId === sl.playerId;
               return (
                 <button
@@ -226,39 +217,36 @@ export function SubstitutionModal({ onClose }) {
           ) : (
             <div className="grid grid-cols-3 gap-1.5">
               {bench.map((p) => {
-                const elig     = benchEligibility(p.id, exhaustedPlayerIds);
-                const eligible = elig === 'ok';
-                const selected = inPlayerId === p.id;
+                const isExhausted = exhaustedPlayerIds.includes(p.id);
+                const selected    = inPlayerId === p.id;
                 // Suggestion ring: this player was previously paired to the outgoing slot
                 const isPaired = outSlotIdx !== -1 && subPairs[p.id] === outSlotIdx;
                 return (
                   <button
                     key={p.id}
                     onClick={() => {
-                      if (!outPlayerId || !eligible) return;
+                      if (!outPlayerId) return;
                       setInPlayerId(p.id);
                       setError('');
                     }}
-                    disabled={!outPlayerId || !eligible}
+                    disabled={!outPlayerId}
                     className={`px-2 py-1.5 rounded text-xs font-bold border transition-colors text-left relative
                       ${selected
                         ? 'bg-primary text-white border-primary ring-0'
                         : !outPlayerId
                           ? 'bg-slate-700 text-slate-400 border-slate-600'
-                          : eligible
-                            ? isPaired
-                              ? 'bg-emerald-900/30 text-emerald-100 border-emerald-400 ring-2 ring-emerald-400/50 hover:bg-emerald-900/50'
-                              : 'bg-slate-700 text-slate-200 border-slate-600 hover:bg-slate-600'
-                            : 'bg-red-950/40 text-red-900/70 border-red-900/30 cursor-not-allowed'
+                          : isPaired
+                            ? 'bg-emerald-900/30 text-emerald-100 border-emerald-400 ring-2 ring-emerald-400/50 hover:bg-emerald-900/50'
+                            : 'bg-slate-700 text-slate-200 border-slate-600 hover:bg-slate-600'
                       }`}
                   >
                     #{p.jersey_number} {p.name}
                     <span className="block text-[1.3vmin] text-slate-400">{p.position}</span>
-                    {isPaired && eligible && (
+                    {isPaired && (
                       <span className="block text-[10px] text-emerald-400 font-semibold mt-0.5">↩ Return</span>
                     )}
-                    {!eligible && outPlayerId && (
-                      <span className="block text-[10px] text-red-500/70 font-semibold mt-0.5">Exhausted</span>
+                    {isExhausted && !isPaired && (
+                      <span className="block text-[10px] text-yellow-500/80 font-semibold mt-0.5">Sub used</span>
                     )}
                   </button>
                 );

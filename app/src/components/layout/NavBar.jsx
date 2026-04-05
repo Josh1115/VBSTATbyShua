@@ -67,7 +67,7 @@ export const NavBar = memo(function NavBar() {
                 <>
                   <span
                     key={String(isActive)}
-                    className={`text-xl ${isActive ? 'animate-icon-bounce' : (tab.idleAnim ?? '')}`}
+                    className={`text-xl ${isActive ? (tab.idleAnim ?? 'animate-icon-bounce') : ''}`}
                   >
                     {tab.icon}
                   </span>

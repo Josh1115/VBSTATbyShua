@@ -2,12 +2,12 @@ export function RotationSpotlight({ rows }) {
   if (!rows || rows.length === 0) return null;
 
   const weakSO = rows
-    .filter(r => r.so_opp >= 5 && r.so_pct < 0.40)
-    .sort((a, b) => a.so_pct - b.so_pct)[0];
+    .filter(r => r.so_opp >= 5)
+    .sort((a, b) => (a.so_pct ?? 0) - (b.so_pct ?? 0))[0];
 
   const weakBP = rows
-    .filter(r => r.bp_opp >= 5 && r.bp_pct < 0.25)
-    .sort((a, b) => a.bp_pct - b.bp_pct)[0];
+    .filter(r => r.bp_opp >= 5)
+    .sort((a, b) => (a.bp_pct ?? 0) - (b.bp_pct ?? 0))[0];
 
   if (!weakSO && !weakBP) return null;
 
