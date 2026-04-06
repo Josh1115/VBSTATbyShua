@@ -24,6 +24,7 @@ import { RotationRadarChart } from '../components/charts/RotationRadarChart';
 import { CourtHeatMap } from '../components/charts/CourtHeatMap';
 import { RotationBarChart } from '../components/charts/RotationBarChart';
 import { SubToggle } from '../components/stats/SubToggle';
+import { SetDistByRotationPanel } from '../components/stats/panels/SetDistByRotationPanel';
 import { SetTrendsChart } from '../components/stats/SetTrendsChart';
 import { RallyHistogram } from '../components/stats/RallyHistogram';
 import { PlayerComparison } from '../components/stats/PlayerComparison';
@@ -641,7 +642,10 @@ export function MatchSummaryPage() {
   const playerJerseys = useMemo(() => players
     ? Object.fromEntries(Object.entries(players).map(([pid, p]) => [pid, p.jersey_number ?? '']))
     : {}, [players]);
-  const playerList = useMemo(() => players ? Object.values(players) : [], [players]);
+  const playerList    = useMemo(() => players ? Object.values(players) : [], [players]);
+  const positionMap   = useMemo(() => players
+    ? Object.fromEntries(Object.entries(players).map(([pid, p]) => [Number(pid), p.position]))
+    : {}, [players]);
 
   const oppScored = useMemo(() => {
     if (!sets?.length) return null;
@@ -1111,6 +1115,7 @@ export function MatchSummaryPage() {
                     <RotationRadarChart rotationStats={displayStats.rotation} />
                     <RotationSpotlight rows={rotationRows} />
                     <StatTable columns={ROTATION_COLS} rows={rotationRows} />
+                    <SetDistByRotationPanel contacts={displayStats.contacts} positionMap={positionMap} />
                     <div className="grid grid-cols-2 gap-4 text-sm text-center">
                       <div className="bg-surface rounded-xl p-3">
                         <div className="text-xs text-slate-400">Overall SO%</div>
@@ -1177,11 +1182,13 @@ export function MatchSummaryPage() {
 
                 {/* Set Distribution by Position */}
                 {(() => {
-                  const POS_ORDER  = ['OH', 'MB', 'RS'];
-                  const POS_LABELS = { OH: 'Outside', MB: 'Middle', RS: 'Right Side' };
+                  const POS_ORDER  = ['OH', 'MB', 'OPP', 'S'];
+                  const POS_LABELS = { OH: 'Outside', MB: 'Middle', OPP: 'Opposite/RS', S: 'Setter' };
+                  // Normalize RS → OPP (same role, different label conventions)
+                  const normalizePos = (pos) => pos === 'RS' ? 'OPP' : pos;
                   const groups = {};
                   for (const row of playerRows) {
-                    const pos = row.pos_label;
+                    const pos = normalizePos(row.pos_label);
                     if (!POS_ORDER.includes(pos)) continue;
                     groups[pos] ??= { ta: 0, k: 0, ae: 0 };
                     groups[pos].ta += row.ta ?? 0;
@@ -1212,7 +1219,7 @@ export function MatchSummaryPage() {
                                   <span className="ml-1.5 text-slate-500 font-normal">{sharePct}%</span>
                                 </span>
                                 <span className="text-xs text-slate-400 tabular-nums">
-                                  {g.ta} TA · {hitting !== null ? fmtHitting(hitting) : '—'}
+                                  {g.ta} TA · {g.k} K · {g.ae} AE · {hitting !== null ? fmtHitting(hitting) : '—'}
                                 </span>
                               </div>
                               <div className="w-full bg-slate-800 rounded-full h-4 overflow-hidden">
