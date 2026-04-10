@@ -635,64 +635,56 @@ export function HomePage() {
           );
         })()}
 
-        {/* ── Opponents ── */}
-        <button
-          onClick={() => navigate('/opponents')}
-          className="group w-full card-top-glow bg-surface rounded-xl p-4 text-left flex items-center gap-4 hover:bg-slate-700 active:scale-[0.97] transition-[transform,background-color] duration-75 animate-slide-up-fade"
-          style={{ animationDelay: '180ms' }}
-        >
-          <span className="text-3xl inline-block transition-transform duration-75 group-active:-translate-y-1.5 group-active:scale-125">🔭</span>
-          <div className="flex-1">
-            <div className="font-semibold text-sm">Opponents</div>
-            <div className="text-xs text-slate-400">Scouting, tendencies & match history</div>
-          </div>
-          <span className="text-slate-500 text-lg">›</span>
-        </button>
-
-        {/* ── Next Match ── */}
-        {nextMatch ? (
+        {/* ── Opponents + Next Match (side by side) ── */}
+        <div className="flex gap-2 animate-slide-up-fade" style={{ animationDelay: '180ms' }}>
           <button
-            onClick={() => navigate(`/matches/${nextMatch.id}/setup`)}
-            className="group w-full card-top-glow bg-surface rounded-xl p-4 text-left flex items-center gap-4 hover:bg-slate-700 active:scale-[0.97] transition-[transform,background-color] duration-75 animate-slide-up-fade"
-            style={{ animationDelay: '200ms' }}
+            onClick={() => navigate('/opponents')}
+            className="group flex-1 card-top-glow bg-surface rounded-xl p-3 text-left flex items-center gap-2.5 hover:bg-slate-700 active:scale-[0.97] transition-[transform,background-color] duration-75"
           >
-            {(() => {
-              const d = nextMatch.date ? new Date(nextMatch.date) : null;
-              const mon = d ? d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase() : '—';
-              const day = d ? d.getDate() : '—';
-              return (
-                <div className="flex-shrink-0 w-11 h-11 rounded-lg overflow-hidden border border-slate-600 flex flex-col transition-transform duration-75 group-active:-translate-y-1.5 group-active:scale-125">
-                  <div className="bg-primary text-white text-[9px] font-black tracking-widest text-center leading-none py-1">{mon}</div>
-                  <div className="flex-1 bg-slate-800 flex items-center justify-center text-lg font-black text-white leading-none tabular-nums">{day}</div>
-                </div>
-              );
-            })()}
-            <div className="flex-1 min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-0.5">Next Match</div>
-              <div className="font-semibold text-sm truncate">{nextMatch.opponent_name ?? 'TBD'}</div>
-              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                {nextMatch.location && (
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
-                    nextMatch.location === 'home'    ? 'bg-emerald-900/50 text-emerald-400' :
-                    nextMatch.location === 'away'    ? 'bg-red-900/50 text-red-400' :
-                                                       'bg-slate-700 text-slate-400'
-                  }`}>
-                    {nextMatch.location === 'home' ? 'HOME' : nextMatch.location === 'away' ? 'AWAY' : 'NEUT'}
-                  </span>
-                )}
-                {nextMatch.conference && (
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
-                    nextMatch.conference === 'conference' ? 'bg-blue-900/50 text-blue-400' : 'bg-slate-700 text-slate-400'
-                  }`}>
-                    {nextMatch.conference === 'conference' ? 'CON' : 'NC'}
-                  </span>
-                )}
-                <span className="text-xs text-slate-400">{fmtDate(nextMatch.date)}</span>
-              </div>
+            <span className="text-2xl inline-block transition-transform duration-75 group-active:-translate-y-1 group-active:scale-125">🔭</span>
+            <div className="min-w-0">
+              <div className="font-semibold text-sm">Opponents</div>
+              <div className="text-[11px] text-slate-400 truncate">Scouting & history</div>
             </div>
-            <span className="text-slate-500 text-lg">›</span>
+            <span className="text-slate-500 ml-auto">›</span>
           </button>
-        ) : null}
+
+          {nextMatch ? (
+            <button
+              onClick={() => navigate(`/matches/${nextMatch.id}/setup`)}
+              className="group flex-1 card-top-glow bg-surface rounded-xl p-3 text-left flex items-center gap-2.5 hover:bg-slate-700 active:scale-[0.97] transition-[transform,background-color] duration-75"
+            >
+              {(() => {
+                const d = nextMatch.date ? new Date(nextMatch.date) : null;
+                const mon = d ? d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase() : '—';
+                const day = d ? d.getDate() : '—';
+                return (
+                  <div className="flex-shrink-0 w-9 h-9 rounded-md overflow-hidden border border-slate-600 flex flex-col transition-transform duration-75 group-active:-translate-y-1 group-active:scale-125">
+                    <div className="bg-primary text-white text-[8px] font-black tracking-wider text-center leading-none py-0.5">{mon}</div>
+                    <div className="flex-1 bg-slate-800 flex items-center justify-center text-sm font-black text-white leading-none tabular-nums">{day}</div>
+                  </div>
+                );
+              })()}
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500 leading-none mb-0.5">Next</div>
+                <div className="font-semibold text-sm truncate">{nextMatch.opponent_name ?? 'TBD'}</div>
+                <div className="flex items-center gap-1 mt-0.5">
+                  {nextMatch.location && (
+                    <span className={`text-[9px] font-bold px-1 py-0.5 rounded uppercase ${
+                      nextMatch.location === 'home' ? 'bg-emerald-900/50 text-emerald-400' :
+                      nextMatch.location === 'away' ? 'bg-red-900/50 text-red-400' :
+                                                      'bg-slate-700 text-slate-400'
+                    }`}>
+                      {nextMatch.location === 'home' ? 'H' : nextMatch.location === 'away' ? 'A' : 'N'}
+                    </span>
+                  )}
+                  <span className="text-[11px] text-slate-400 truncate">{fmtDate(nextMatch.date)}</span>
+                </div>
+              </div>
+              <span className="text-slate-500">›</span>
+            </button>
+          ) : null}
+        </div>
 
         <NetDivider />
 
