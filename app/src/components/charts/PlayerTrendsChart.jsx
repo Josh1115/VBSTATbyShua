@@ -39,7 +39,7 @@ export function PlayerTrendsChart({ trends, playerNames }) {
   // One object per match; each player ID is a key with their stat value (or null)
   const data = trends.matches.map((m, i) => {
     const row = {
-      name:         fmtShortDate(m.date) || m.opponentName || `M${i + 1}`,
+      name:         m.opponentAbbr || m.opponentName || `M${i + 1}`,
       opponentName: m.opponentName,
     };
     for (const [pid, entries] of Object.entries(trends.byPlayer)) {

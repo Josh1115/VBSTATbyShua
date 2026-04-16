@@ -20,7 +20,7 @@ function mkAccum() {
     // pass — result stored as '0' | '1' | '2' | '3'
     pa: 0, p0: 0, p1: 0, p2: 0, p3: 0,
     // attack
-    ta: 0, k: 0, ae: 0,
+    ta: 0, k: 0, ae: 0, ae_ob: 0, ae_net: 0, ae_blk: 0, ae_bra: 0,
     // set
     ast: 0, bhe: 0,
     // error actions (L/DBL/NET tap on PlayerTile)
@@ -64,7 +64,13 @@ function accumContact(p, { action, result, serve_type, error_type, count = 1 }) 
   } else if (action === 'attack') {
     p.ta += n;
     if (result === 'kill')  p.k  += n;
-    if (result === 'error') p.ae += n;
+    if (result === 'error') {
+      p.ae += n;
+      if (error_type === 'ob')  p.ae_ob  += n;
+      if (error_type === 'net') p.ae_net += n;
+      if (error_type === 'blk') p.ae_blk += n;
+      if (error_type === 'bra') p.ae_bra += n;
+    }
   } else if (action === 'set') {
     if (result === 'assist')              p.ast += n;
     if (result === 'ball_handling_error') p.bhe += n;
@@ -116,7 +122,7 @@ function deriveStats(p, sp, posLabel = null) {
     pp_pct: div(p.p3, p.pa),           // perfect-pass %
 
     // Attacking
-    ta: p.ta, k: p.k, ae: p.ae,
+    ta: p.ta, k: p.k, ae: p.ae, ae_ob: p.ae_ob, ae_net: p.ae_net, ae_blk: p.ae_blk, ae_bra: p.ae_bra,
     hit_pct: div(p.k - p.ae, p.ta),
     k_pct:   div(p.k,  p.ta),
     kps:     div(p.k,  sp),
@@ -858,7 +864,7 @@ export function computePlayerTrends(matches, contacts, setsPerMatch, playerPosit
   }
 
   return {
-    matches:  sorted.map(m => ({ id: m.id, date: m.date, opponentName: m.opponent_name ?? '' })),
+    matches:  sorted.map(m => ({ id: m.id, date: m.date, opponentName: m.opponent_name ?? '', opponentAbbr: m.opponent_abbr ?? '' })),
     byPlayer,
   };
 }

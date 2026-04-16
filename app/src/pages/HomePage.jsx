@@ -56,6 +56,17 @@ export function HomePage() {
   const [matchView, setMatchView] = useState(() => getStorageItem(STORAGE_KEYS.MATCH_VIEW_DEFAULT, 'recent'));
   const scoreDetail = getStorageItem(STORAGE_KEYS.SCORE_DETAIL, 'sets');
 
+  // ── Schedule-edit modal state ─────────────────────────────────────────────
+  const [schedOpen,      setSchedOpen]      = useState(false);
+  const [editMatchId,    setEditMatchId]    = useState(null);
+  const [schedOpp,       setSchedOpp]       = useState('');
+  const [schedOppAbbr,   setSchedOppAbbr]   = useState('');
+  const [schedDate,      setSchedDate]      = useState(() => new Date().toISOString().slice(0, 10));
+  const [schedLoc,       setSchedLoc]       = useState('home');
+  const [schedConf,      setSchedConf]      = useState('non-con');
+  const [schedMatchType, setSchedMatchType] = useState('reg-season');
+  const [schedSaving,    setSchedSaving]    = useState(false);
+
   const todayDisplay = useMemo(() => {
     const d = new Date();
     const day = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
@@ -148,12 +159,17 @@ export function HomePage() {
     const awayL  = matches.filter(m => m.location === 'away'    && !isWin(m)).length;
     const neutW  = matches.filter(m => m.location === 'neutral' &&  isWin(m)).length;
     const neutL  = matches.filter(m => m.location === 'neutral' && !isWin(m)).length;
+    const confW  = matches.filter(m => m.conference === 'conference' &&  isWin(m)).length;
+    const confL  = matches.filter(m => m.conference === 'conference' && !isWin(m)).length;
+    const last5  = [...matches].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+    const last5W = last5.filter(isWin).length;
+    const last5L = last5.length - last5W;
     return {
       teamName:   team.name ?? team.abbreviation ?? 'Team',
       seasonName: season.name ?? String(season.year),
       wins, losses, total: matches.length,
       winPct:  matches.length ? wins / matches.length : null,
-      homeW, homeL, awayW, awayL, neutW, neutL,
+      homeW, homeL, awayW, awayL, neutW, neutL, confW, confL, last5W, last5L, last5Count: last5.length,
       hasLocData: (homeW + homeL + awayW + awayL + neutW + neutL) > 0,
       matchProgress: { completed: matches.length, total: allSeasonMatches.length },
     };
@@ -329,6 +345,53 @@ export function HomePage() {
   const inProgress    = recentMatches?.find((m) => m.status === MATCH_STATUS.IN_PROGRESS);
   const displayMatches = recentMatches ?? [];
 
+  function openEditMatch(match) {
+    setEditMatchId(match.id);
+    setSchedOpp(match.opponent_name ?? '');
+    setSchedOppAbbr(match.opponent_abbr ?? '');
+    setSchedDate(match.date ? match.date.slice(0, 10) : new Date().toISOString().slice(0, 10));
+    setSchedLoc(match.location ?? 'home');
+    setSchedConf(match.conference ?? 'non-con');
+    setSchedMatchType(match.match_type ?? 'reg-season');
+    setSchedOpen(true);
+  }
+
+  async function handleScheduleGame() {
+    if (!schedOpp.trim()) return;
+    setSchedSaving(true);
+    try {
+      let oppRecord = await db.opponents.where('name').equals(schedOpp.trim()).first();
+      if (!oppRecord) {
+        const oppId = await db.opponents.add({ name: schedOpp.trim() });
+        oppRecord = { id: oppId, name: schedOpp.trim() };
+      }
+      const fields = {
+        opponent_id:   oppRecord.id,
+        opponent_name: oppRecord.name,
+        opponent_abbr: schedOppAbbr.trim().toUpperCase() || null,
+        date:          schedDate ? new Date(schedDate + 'T12:00:00').toISOString() : new Date().toISOString(),
+        location:      schedLoc,
+        conference:    schedConf,
+        match_type:    schedMatchType,
+      };
+      await db.matches.update(editMatchId, fields);
+      resetSchedForm();
+    } finally {
+      setSchedSaving(false);
+    }
+  }
+
+  function resetSchedForm() {
+    setEditMatchId(null);
+    setSchedOpp('');
+    setSchedOppAbbr('');
+    setSchedDate(new Date().toISOString().slice(0, 10));
+    setSchedLoc('home');
+    setSchedConf('non-con');
+    setSchedMatchType('reg-season');
+    setSchedOpen(false);
+  }
+
   return (
     <div>
       {/* ── Header ── */}
@@ -388,7 +451,7 @@ export function HomePage() {
           </div>
         ))}
 
-        <h1 className="tracking-wide flex items-baseline justify-center gap-3">
+        <h1 className="tracking-wide flex flex-col items-center gap-0.5">
           <span
             className="scoreboard-flicker text-4xl md:text-5xl cursor-pointer select-none"
             style={{ fontFamily: "'Orbitron', sans-serif", fontWeight: 900, letterSpacing: '0.12em', color: '#f97316' }}
@@ -399,15 +462,12 @@ export function HomePage() {
           >
             VBSTAT
           </span>
-          <span className="text-slate-400 font-normal text-lg">
-            by Shua
+          <span className="text-slate-400 font-normal text-sm tracking-wide italic">
+            powered by Shua Stat Engine
           </span>
         </h1>
-        <div
-          className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 mt-0.5"
-          style={{ fontFamily: "'Orbitron', sans-serif" }}
-        >
-          {todayDisplay}
+        <div className="text-[12px] font-semibold tracking-[0.22em] text-slate-600 uppercase mt-1">
+          Precision Sideline Analytics
         </div>
       </header>
 
@@ -473,7 +533,7 @@ export function HomePage() {
             <div className="grid grid-cols-2 divide-x divide-slate-700/60">
               <div className="py-5 text-center">
                 <div
-                  className="text-6xl font-black text-emerald-400 tabular-nums leading-none scoreboard-flicker"
+                  className="text-7xl font-black text-emerald-400 tabular-nums leading-none scoreboard-flicker"
                   style={{ fontFamily: "'Orbitron', sans-serif" }}
                 >
                   {displaySeasonRecord.wins}
@@ -482,7 +542,7 @@ export function HomePage() {
               </div>
               <div className="py-5 text-center">
                 <div
-                  className="text-6xl font-black text-red-400 tabular-nums leading-none scoreboard-flicker"
+                  className="text-7xl font-black text-red-400 tabular-nums leading-none scoreboard-flicker"
                   style={{ fontFamily: "'Orbitron', sans-serif" }}
                 >
                   {displaySeasonRecord.losses}
@@ -521,6 +581,22 @@ export function HomePage() {
                       <span className="text-slate-700">·</span>
                       <span className="text-slate-400 font-semibold">
                         {seasonRecord.neutW}–{seasonRecord.neutL} <span className="text-slate-500">NEUT</span>
+                      </span>
+                    </>
+                  )}
+                  {(seasonRecord.confW + seasonRecord.confL) > 0 && (
+                    <>
+                      <span className="text-slate-700">·</span>
+                      <span className="text-slate-400 font-semibold">
+                        {seasonRecord.confW}–{seasonRecord.confL} <span className="text-slate-500">CONF</span>
+                      </span>
+                    </>
+                  )}
+                  {seasonRecord.last5Count > 0 && (
+                    <>
+                      <span className="text-slate-700">·</span>
+                      <span className="text-slate-400 font-semibold">
+                        {seasonRecord.last5W}–{seasonRecord.last5L} <span className="text-slate-500">L{seasonRecord.last5Count}</span>
                       </span>
                     </>
                   )}
@@ -650,22 +726,25 @@ export function HomePage() {
           </button>
 
           {nextMatch ? (
-            <button
-              onClick={() => navigate(`/matches/${nextMatch.id}/setup`)}
-              className="group flex-1 card-top-glow bg-surface rounded-xl p-3 text-left flex items-center gap-2.5 hover:bg-slate-700 active:scale-[0.97] transition-[transform,background-color] duration-75"
-            >
+            <div className="group flex-1 card-top-glow bg-surface rounded-xl p-3 text-left flex items-center gap-2.5">
               {(() => {
                 const d = nextMatch.date ? new Date(nextMatch.date) : null;
                 const mon = d ? d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase() : '—';
                 const day = d ? d.getDate() : '—';
                 return (
-                  <div className="flex-shrink-0 w-9 h-9 rounded-md overflow-hidden border border-slate-600 flex flex-col transition-transform duration-75 group-active:-translate-y-1 group-active:scale-125">
+                  <div
+                    className="flex-shrink-0 w-9 h-9 rounded-md overflow-hidden border border-slate-600 flex flex-col cursor-pointer"
+                    onClick={() => navigate(`/matches/${nextMatch.id}/setup`)}
+                  >
                     <div className="bg-primary text-white text-[8px] font-black tracking-wider text-center leading-none py-0.5">{mon}</div>
                     <div className="flex-1 bg-slate-800 flex items-center justify-center text-sm font-black text-white leading-none tabular-nums">{day}</div>
                   </div>
                 );
               })()}
-              <div className="min-w-0 flex-1">
+              <div
+                className="min-w-0 flex-1 cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => navigate(`/matches/${nextMatch.id}/setup`)}
+              >
                 <div className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500 leading-none mb-0.5">Next</div>
                 <div className="font-semibold text-sm truncate">{nextMatch.opponent_name ?? 'TBD'}</div>
                 <div className="flex items-center gap-1 mt-0.5">
@@ -681,8 +760,18 @@ export function HomePage() {
                   <span className="text-[11px] text-slate-400 truncate">{fmtDate(nextMatch.date)}</span>
                 </div>
               </div>
-              <span className="text-slate-500">›</span>
-            </button>
+              {nextMatch.status === MATCH_STATUS.SCHEDULED ? (
+                <button
+                  onClick={() => openEditMatch(nextMatch)}
+                  className="text-slate-400 hover:text-white px-1.5 py-1 rounded transition-colors text-base leading-none"
+                  title="Edit match"
+                >
+                  ✎
+                </button>
+              ) : (
+                <span className="text-slate-500">›</span>
+              )}
+            </div>
           ) : null}
         </div>
 
@@ -766,22 +855,57 @@ export function HomePage() {
               onDeleteConfirm={() => setConfirmDelete(match)}
               animDelay={`${idx * 40}ms`}
             >
-              <button
-                onClick={() => navigate(
-                  match.status === MATCH_STATUS.COMPLETE
-                    ? `/matches/${match.id}/summary`
-                    : `/matches/${match.id}/live`
-                )}
-                className={`w-full bg-surface p-4 text-left flex items-center justify-between hover:bg-slate-700 rounded-xl transition-colors border-l-4 ${
-                  match.status === MATCH_STATUS.COMPLETE
-                    ? (match.our_sets_won ?? 0) > (match.opp_sets_won ?? 0)
-                      ? 'border-emerald-600'
-                      : 'border-red-700'
-                    : match.status === MATCH_STATUS.IN_PROGRESS
-                    ? 'border-primary'
-                    : 'border-transparent'
-                }`}
-              >
+              {match.status === MATCH_STATUS.SCHEDULED ? (
+                <div className="w-full bg-surface rounded-xl px-4 py-3 flex items-center justify-between border-l-4 border-transparent">
+                  <div>
+                    <div className="font-semibold">{match.opponent_name ?? 'vs. Unknown'}</div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {match.location && (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                          match.location === 'home'    ? 'bg-emerald-900/50 text-emerald-400' :
+                          match.location === 'away'    ? 'bg-red-900/50 text-red-400' :
+                                                         'bg-slate-700 text-slate-400'
+                        }`}>
+                          {match.location === 'home' ? 'H' : match.location === 'away' ? 'A' : 'N'}
+                        </span>
+                      )}
+                      <span className="text-xs text-slate-400">
+                        {match.season ? `${match.season.name ?? match.season.year} · ` : ''}{fmtDate(match.date)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => openEditMatch(match)}
+                      className="text-xs font-semibold px-2.5 py-1 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => navigate(`/matches/new?season=${match.season_id}&match=${match.id}`)}
+                      className="text-xs font-semibold px-2.5 py-1 rounded bg-amber-900/40 text-amber-400 hover:bg-amber-900/60 transition-colors"
+                    >
+                      ▶ Start
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => navigate(
+                    match.status === MATCH_STATUS.COMPLETE
+                      ? `/matches/${match.id}/summary`
+                      : `/matches/${match.id}/live`
+                  )}
+                  className={`w-full bg-surface p-4 text-left flex items-center justify-between hover:bg-slate-700 rounded-xl transition-colors border-l-4 ${
+                    match.status === MATCH_STATUS.COMPLETE
+                      ? (match.our_sets_won ?? 0) > (match.opp_sets_won ?? 0)
+                        ? 'border-emerald-600'
+                        : 'border-red-700'
+                      : match.status === MATCH_STATUS.IN_PROGRESS
+                      ? 'border-primary'
+                      : 'border-transparent'
+                  }`}
+                >
                   <div>
                     <div className="font-semibold">
                       {match.opponent_name ?? 'vs. Unknown'}
@@ -835,7 +959,8 @@ export function HomePage() {
                         : 'Setup'}
                     </div>
                   </div>
-              </button>
+                </button>
+              )}
             </SwipeableMatchCard>
           ))}
         </section>
@@ -855,6 +980,13 @@ export function HomePage() {
           </div>
           <span className="text-slate-500 text-lg">›</span>
         </button>
+
+        <div
+          className="text-[11px] font-semibold tracking-[0.18em] text-slate-600 text-center pt-2 pb-1"
+          style={{ fontFamily: "'Orbitron', sans-serif" }}
+        >
+          {todayDisplay}
+        </div>
       </div>
 
       {confirmDelete && (
@@ -869,6 +1001,128 @@ export function HomePage() {
           }}
           onCancel={() => setConfirmDelete(null)}
         />
+      )}
+
+      {/* ── Edit Scheduled Match Modal ── */}
+      {schedOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm">
+          <div className="flex min-h-full items-center justify-center p-4">
+          <div className="bg-bg w-full max-w-md rounded-2xl p-6 space-y-4 shadow-2xl">
+            <h2 className="text-lg font-bold">Edit Scheduled Game</h2>
+
+            {/* Opponent */}
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Opponent</label>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={schedOpp}
+                  onChange={(e) => setSchedOpp(e.target.value)}
+                  placeholder="Opponent team name"
+                  className="flex-1 bg-surface border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary placeholder:text-slate-600"
+                  autoFocus
+                />
+                <div className="flex flex-col items-center gap-0.5">
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wide leading-none">Abbr</span>
+                  <input
+                    type="text"
+                    value={schedOppAbbr}
+                    onChange={(e) => setSchedOppAbbr(e.target.value.toUpperCase().slice(0, 3))}
+                    placeholder="OPP"
+                    maxLength={3}
+                    className="w-[56px] bg-surface border border-slate-600 text-white rounded-lg px-2 py-2 text-sm text-center font-bold uppercase tracking-widest focus:outline-none focus:border-primary placeholder:text-slate-600"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Date */}
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Date</label>
+              <input
+                type="date"
+                value={schedDate}
+                onChange={(e) => setSchedDate(e.target.value)}
+                className="w-full bg-surface border border-slate-600 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            {/* Location */}
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Location</label>
+              <div className="flex gap-2">
+                {['home', 'away', 'neutral'].map((loc) => (
+                  <button
+                    key={loc}
+                    onClick={() => setSchedLoc(loc)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors
+                      ${schedLoc === loc
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-surface text-slate-300 border-slate-600 hover:border-slate-400'
+                      }`}
+                  >
+                    {loc.charAt(0).toUpperCase() + loc.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Conference */}
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Opponent Type</label>
+              <div className="flex gap-2">
+                {[['conference', 'Conference'], ['non-con', 'Non-Con']].map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setSchedConf(val)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors
+                      ${schedConf === val
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-surface text-slate-300 border-slate-600 hover:border-slate-400'
+                      }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Match Type */}
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase tracking-wide">Match Type</label>
+              <div className="flex gap-2">
+                {[['reg-season', 'Reg Season'], ['tourney', 'Tourney'], ['ihsa-playoffs', 'IHSA Playoffs'], ['exhibition', 'Exhibition']].map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setSchedMatchType(val)}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition-colors
+                      ${schedMatchType === val
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-surface text-slate-300 border-slate-600 hover:border-slate-400'
+                      }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-2">
+              <Button variant="secondary" className="flex-1" onClick={resetSchedForm}>
+                Cancel
+              </Button>
+              <Button
+                className="flex-1"
+                disabled={!schedOpp.trim() || schedSaving}
+                onClick={handleScheduleGame}
+              >
+                {schedSaving ? 'Saving…' : 'Save Game'}
+              </Button>
+            </div>
+          </div>
+          </div>
+        </div>
       )}
     </div>
   );
