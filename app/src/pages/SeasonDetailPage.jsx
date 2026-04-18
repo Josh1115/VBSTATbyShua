@@ -186,7 +186,12 @@ export function SeasonDetailPage() {
                     >
                       <div className="w-full bg-surface rounded-xl px-4 py-3 flex items-center justify-between">
                         <div>
-                          <div className="font-semibold">{match.opponent_name}</div>
+                          <div className="font-semibold flex items-center gap-1.5 flex-wrap">
+                            {match.opponent_name}
+                            {match.match_type === 'tourney' && match.tournament_name && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-900/50 text-violet-300 uppercase tracking-wide">{match.tournament_name}</span>
+                            )}
+                          </div>
                           <div className="text-xs text-slate-400">{fmtDate(match.date)}</div>
                         </div>
                         <div className="flex items-center gap-2">

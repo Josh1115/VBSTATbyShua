@@ -934,10 +934,15 @@ export function HomePage() {
                   }`}
                 >
                   <div>
-                    <div className="font-semibold">
-                      {match.opponent_name ?? 'vs. Unknown'}
-                      {match.opponent_maxpreps_rank != null && (
-                        <span className="text-slate-400 font-normal"> #{match.opponent_maxpreps_rank}</span>
+                    <div className="font-semibold flex items-center gap-1.5 flex-wrap">
+                      <span>
+                        {match.opponent_name ?? 'vs. Unknown'}
+                        {match.opponent_maxpreps_rank != null && (
+                          <span className="text-slate-400 font-normal"> #{match.opponent_maxpreps_rank}</span>
+                        )}
+                      </span>
+                      {match.match_type === 'tourney' && match.tournament_name && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-900/50 text-violet-300 uppercase tracking-wide">{match.tournament_name}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
