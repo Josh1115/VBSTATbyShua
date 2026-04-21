@@ -81,6 +81,7 @@ async function computeLeaderboards(tab, teamId, currentSeasonId) {
         class_year:        r.class_year ?? '',
         career_year_start: r.career_year_start ?? null,
         career_year_end:   r.career_year_end   ?? null,
+        active:            r.career_year_start != null && !r.career_year_end,
       }));
   }
 
@@ -370,7 +371,9 @@ function LeaderboardRow({ row, tab, fmt, onEdit, onDelete }) {
             )}
             {(row.career_year_start || row.career_year_end) && (
               <span className="ml-1.5 text-xs text-slate-500">
-                · {row.career_year_start ?? '?'}–{row.career_year_end ?? '?'}
+                · {row.career_year_start === row.career_year_end
+                    ? row.career_year_start
+                    : `${row.career_year_start ?? '?'}–${row.career_year_end ?? 'present'}`}
               </span>
             )}
           </span>
