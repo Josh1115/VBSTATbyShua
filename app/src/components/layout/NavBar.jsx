@@ -5,7 +5,7 @@ import clsx from 'clsx';
 const TABS = [
   { to: '/',         label: 'Home',     icon: '🏠', end: true,  idleAnim: 'animate-home-pulse'   },
   { to: '/teams',    label: 'Teams',    icon: '👥', end: false, idleAnim: 'animate-teams-wobble' },
-  { to: '/records',  label: 'Records',  icon: '🏆', end: false, idleAnim: 'animate-icon-bounce'  },
+  { to: '/records',  label: 'Records',  icon: '🏆', end: false, idleAnim: 'animate-trophy-twinkle' },
   { to: '/reports',  label: 'Reports',  icon: '📊', end: false, idleAnim: 'animate-chart-float'  },
   { to: '/settings', label: 'Settings', icon: '⚙️', end: false, idleAnim: 'animate-gear-spin'   },
 ];

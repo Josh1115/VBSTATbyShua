@@ -134,6 +134,7 @@ function deriveStats(p, sp, posLabel = null) {
 
     // Blocking
     bs: p.bs, ba: p.ba, be: p.be,
+    blk: p.bs + p.ba * 0.5,
     bps: div(p.bs + p.ba * 0.5, sp),
 
     // Defense

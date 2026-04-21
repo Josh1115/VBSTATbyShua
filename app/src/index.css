@@ -184,6 +184,15 @@
   z-index: 1;
 }
 
+/* ── PWA update banner ── */
+@keyframes slide-down {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(0); }
+}
+.animate-slide-down {
+  animation: slide-down 280ms var(--ease-spring) both;
+}
+
 /* ── Item 25: NavBar icon bounce on activate ── */
 @keyframes icon-bounce {
   0%   { transform: scale(1); }
@@ -228,6 +237,24 @@
 }
 .animate-teams-wobble {
   animation: teams-wobble 2.8s ease-in-out infinite;
+}
+
+@keyframes trophy-twinkle {
+  /* pop in on activate */
+  0%   { transform: scale(1);    filter: drop-shadow(0 0 0px transparent); }
+  6%   { transform: scale(1.24); filter: drop-shadow(0 0 8px #fbbf24) drop-shadow(0 0 16px rgba(251,191,36,0.55)); }
+  14%  { transform: scale(1);    filter: drop-shadow(0 0 3px #fbbf24); }
+  /* first glint */
+  21%  { filter: drop-shadow(0 0 6px #fbbf24) drop-shadow(0 0 12px rgba(251,191,36,0.4)); }
+  27%  { filter: drop-shadow(0 0 0px transparent); }
+  /* second glint */
+  33%  { filter: drop-shadow(0 0 4px #f59e0b); }
+  38%  { filter: drop-shadow(0 0 0px transparent); }
+  /* rest until loop */
+  100% { transform: scale(1);    filter: drop-shadow(0 0 0px transparent); }
+}
+.animate-trophy-twinkle {
+  animation: trophy-twinkle 3.6s ease-in-out infinite;
 }
 
 /* ── Item 26: Score nudge popup bounce entrance ── */

@@ -1,4 +1,4 @@
-import { fmtPct, fmtCount, fmtRate, fmtPassRating, fmtHitting, fmtVER } from './formatters';
+import { fmtPct, fmtCount, fmtBlocks, fmtRate, fmtPassRating, fmtHitting, fmtVER } from './formatters';
 import { VERBadge } from '../components/stats/VERBadge';
 
 function soColor(v, row) {
@@ -107,6 +107,7 @@ export const TAB_COLUMNS = {
   blocking: [
     { key: 'name',  label: 'Player' },
     ...SP_MP_COLS,
+    { key: 'blk',   label: 'BLK',   fmt: fmtBlocks },
     { key: 'bs',    label: 'BS',    fmt: fmtCount },
     { key: 'ba',    label: 'BA',    fmt: fmtCount },
     { key: 'be',    label: 'BE',    fmt: fmtCount },

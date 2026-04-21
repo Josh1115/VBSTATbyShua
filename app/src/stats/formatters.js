@@ -12,7 +12,10 @@ export const fmtPassRating = (val) => fmt(val, v => v.toFixed(2));
 export const fmtPct = (val) => fmt(val, v => (v * 100).toFixed(1) + '%');
 
 // Integer counts  (kills, aces, digs, etc.)
-export const fmtCount = (val) => fmt(val, v => String(Math.round(v)));
+export const fmtCount  = (val) => fmt(val, v => String(Math.round(v)));
+
+// Block totals — shows .5 when half-blocks are involved, integer otherwise
+export const fmtBlocks = (val) => fmt(val, v => (v % 1 === 0 ? String(v) : v.toFixed(1)));
 
 // Fractional per-set rates  (KPS, BPS, DiPS, APS, etc.)
 export const fmtRate = (val) => fmt(val, v => v.toFixed(2));

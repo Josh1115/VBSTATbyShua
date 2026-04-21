@@ -1,6 +1,7 @@
 import { Component } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { NavBar } from './NavBar';
+import { UpdatePrompt } from './UpdatePrompt';
 import { useUiStore, selectToast } from '../../store/uiStore';
 
 class ErrorBoundary extends Component {
@@ -43,6 +44,7 @@ export function Layout() {
 
   return (
     <div className="min-h-screen bg-bg text-white">
+      <UpdatePrompt />
       <main className={hideNav ? '' : 'pb-20'}>
         <div className={hideNav ? '' : 'max-w-2xl mx-auto'}>
           <ErrorBoundary key={pathname}>
