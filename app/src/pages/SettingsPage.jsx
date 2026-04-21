@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { useInstallPrompt } from '../hooks/useInstallPrompt';
 import { exportBackup, importBackup } from '../stats/backup';
+import { MergeBackupModal } from '../components/settings/MergeBackupModal';
 import { db } from '../db/schema';
 import { useUiStore } from '../store/uiStore';
 import { FORMAT, ACCENT_COLORS } from '../constants';
@@ -200,6 +201,7 @@ export function SettingsPage() {
   const [confirmImport,  setConfirmImport]  = useState(false);
   const [pendingFile,    setPendingFile]    = useState(null);
   const [importing,      setImporting]      = useState(false);
+  const [showMerge,      setShowMerge]      = useState(false);
 
   const { canInstall, isIOS, isInstalled, promptInstall } = useInstallPrompt();
   const storage = useStorageEstimate();
@@ -713,6 +715,14 @@ export function SettingsPage() {
               onChange={handleImportPick}
             />
 
+            <Button
+              className="w-full"
+              variant="secondary"
+              onClick={() => setShowMerge(true)}
+            >
+              Merge from Backup (JSON)
+            </Button>
+
             <Button className="w-full" variant="danger" onClick={() => setConfirmClear(true)}>
               Clear All Data
             </Button>
@@ -748,6 +758,13 @@ export function SettingsPage() {
           danger
           onConfirm={handleImportConfirm}
           onCancel={() => { setConfirmImport(false); setPendingFile(null); }}
+        />
+      )}
+
+      {showMerge && (
+        <MergeBackupModal
+          onClose={() => setShowMerge(false)}
+          onSuccess={() => showToast('Merge complete', 'success')}
         />
       )}
     </div>
