@@ -745,7 +745,7 @@ export function MatchSummaryPage() {
     // Passing & setting
     const pa = sum('pa'), p0 = sum('p0'), p1 = sum('p1'),
           p2 = sum('p2'), p3 = sum('p3');
-    const ast = sum('ast'), bhe = sum('bhe'), lift = sum('lift'), dbl = sum('dbl');
+    const ast = sum('ast'), bhe = sum('bhe'), lift = sum('lift'), dbl = sum('dbl'), net = sum('net');
 
     // Attacking & blocking
     const ta = sum('ta'), k = sum('k'), ae = sum('ae');
@@ -755,6 +755,24 @@ export function MatchSummaryPage() {
     // Defense
     const dig = sum('dig'), de = sum('de'),
           fbr = sum('fbr'), fbs = sum('fbs'), fbe = sum('fbe');
+
+    // Team VER — same formula as individual but no position multiplier (whole-team aggregate)
+    const teamVer = sp > 0
+      ? (1 / sp) * (
+          4.0  * k    +
+          4.0  * ace  +
+          3.5  * bs   +
+          1.75 * ba   +
+          1.5  * ast  +
+          1.25 * dig  -
+          2.5  * ae   -
+          2.5  * se   -
+          1.5  * bhe  -
+          1.5  * fbe  -
+          1.5  * lift -
+          1.5  * net
+        )
+      : null;
 
     return {
       // Serving views
@@ -794,7 +812,7 @@ export function MatchSummaryPage() {
         hit_pct:   ta > 0 ? (k - ae) / ta : null,
         k_pct:     ta > 0 ? k / ta : null,
         kps:       sp > 0 ? k / sp : null,
-        pos_label: null, pos_mult: null, ver: null,
+        pos_label: null, pos_mult: null, ver: teamVer,
       },
       blocking: {
         name: 'TOTAL', sp, mp, bs, ba, be,
@@ -804,6 +822,11 @@ export function MatchSummaryPage() {
       defense: {
         name: 'TOTAL', sp, mp, dig, de, fbr, fbs, fbe,
         dips: sp > 0 ? dig / sp : null,
+      },
+      // VER tab totals row
+      ver: {
+        name: 'TOTAL', sp, mp, k, ace, bs, ba, ast, dig, ae, se, bhe,
+        pos_label: null, pos_mult: null, ver: teamVer,
       },
     };
   }, [playerRows]);
@@ -1472,6 +1495,8 @@ export function MatchSummaryPage() {
               const blkPerSet = ((t.bs ?? 0) + (t.ba ?? 0) * 0.5) / numSets;
               const digPerSet = (t.dig ?? 0) / numSets;
 
+              const teamVer = statTotals?.ver?.ver ?? null;
+
               const categories = [
                 {
                   label: 'Serving',
@@ -1532,6 +1557,18 @@ export function MatchSummaryPage() {
                     { label: 'FBR',      val: t.fbr ?? 0             },
                   ],
                   note: digPerSet >= 15 ? 'Outstanding floor defense' : digPerSet >= 9 ? 'Solid defensive effort' : 'Defense gave up too much',
+                },
+                {
+                  label: 'Team VER',
+                  icon: '📊',
+                  ...letterGrade(teamVer, [90, 70, 50, 30]),
+                  stats: [
+                    { label: 'VER/Set',  val: teamVer != null ? teamVer.toFixed(1) : '—' },
+                    { label: 'Sets',     val: numSets                                     },
+                    { label: 'Total',    val: teamVer != null ? (teamVer * numSets).toFixed(0) : '—' },
+                    { label: 'Pos Adj',  val: 'No'                                        },
+                  ],
+                  note: teamVer == null ? 'No data' : teamVer >= 90 ? 'Elite overall efficiency' : teamVer >= 70 ? 'Strong performance' : teamVer >= 50 ? 'Average efficiency' : 'Efficiency needs improvement',
                 },
               ];
 
