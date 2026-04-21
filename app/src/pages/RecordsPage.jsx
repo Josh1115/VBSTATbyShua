@@ -90,7 +90,7 @@ async function computeLeaderboards(tab, teamId, currentSeasonId) {
 
   const allMatches = await db.matches
     .where('season_id').anyOf(seasons.map(s => s.id))
-    .filter(m => m.status !== MATCH_STATUS.SCHEDULED)
+    .filter(m => m.status !== MATCH_STATUS.SCHEDULED && m.match_type !== 'exhibition')
     .toArray();
 
   if (!allMatches.length) return Object.fromEntries(RECORD_STATS.map(s => [s.key, mergeAndRank([], historicalRows(s.key))]));
