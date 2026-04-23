@@ -17,7 +17,6 @@ import { SwipeableMatchCard } from '../components/ui/SwipeableMatchCard';
 import { PracticeSessionDetailModal, SRRatingDistBar } from '../components/team/PracticeSessionDetailModal';
 import { PlayerFormModal } from '../components/team/PlayerFormModal';
 import { SeasonFormModal } from '../components/team/SeasonFormModal';
-import { RecordFormModal, RECORD_TYPES } from '../components/team/RecordFormModal';
 import { SavedLineupModal } from '../components/team/SavedLineupModal';
 import { RosterImportModal } from '../components/team/RosterImportModal';
 
@@ -46,11 +45,6 @@ export function TeamDetailPage() {
     [id]
   );
 
-  const records = useLiveQuery(
-    () => db.records.where('team_id').equals(id).toArray(),
-    [id]
-  );
-
   const practiceSessions = useLiveQuery(
     () => db.practice_sessions.where('team_id').equals(id).reverse().toArray(),
     [id]
@@ -73,10 +67,6 @@ export function TeamDetailPage() {
   const [draftPlannedSubs,    setDraftPlannedSubs]    = useState(null); // Array | null
   const [expandedRotation,    setExpandedRotation]    = useState(1);
   const [savingLineupConfig,  setSavingLineupConfig]  = useState(false);
-  const [showRecordModal, setShowRecordModal] = useState(false);
-  const [addRecordType,   setAddRecordType]   = useState(null);
-  const [editRecord,      setEditRecord]      = useState(null);
-  const [deleteRecord,    setDeleteRecord]    = useState(null);
   const showToast = useUiStore(selectShowToast);
 
   const removePlayer = async () => {
@@ -104,7 +94,6 @@ export function TeamDetailPage() {
           { value: 'roster',   label: `Roster (${activePlayers.length})` },
           { value: 'lineups',  label: 'Lineups' },
           { value: 'seasons',  label: 'Seasons' },
-          { value: 'records',  label: 'Records' },
           { value: 'practice', label: 'Practice' },
         ]}
         active={tab}
@@ -428,49 +417,6 @@ export function TeamDetailPage() {
         </div>
       )}
 
-      {tab === 'records' && (
-        <div className="p-4 md:p-6 space-y-6">
-          {RECORD_TYPES.map(({ value: type, label }) => {
-            const typeRecords = (records ?? []).filter((r) => r.type === type);
-            return (
-              <section key={type}>
-                <div className="flex justify-between items-center mb-2">
-                  <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">{label}</h2>
-                  <Button size="sm" onClick={() => { setAddRecordType(type); setShowRecordModal(true); }}>+ Record</Button>
-                </div>
-                {typeRecords.length === 0 ? (
-                  <p className="text-sm text-slate-600 text-center py-3 bg-surface rounded-xl">No records yet</p>
-                ) : (
-                  <div className="space-y-2">
-                    {typeRecords.map((rec) => (
-                      <div key={rec.id} className="bg-surface rounded-xl px-4 py-3 flex items-center justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline gap-2">
-                            <span className="font-black text-primary text-xl tabular-nums">{rec.value}</span>
-                            <span className="font-semibold text-white">{rec.stat}</span>
-                          </div>
-                          <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5 text-xs text-slate-400">
-                            {rec.player_name  && <span>{rec.player_name}</span>}
-                            {rec.opponent     && <span>vs. {rec.opponent}</span>}
-                            {rec.season_label && <span>{rec.season_label}</span>}
-                            {rec.date         && <span>{rec.date}</span>}
-                            {rec.notes        && <span className="text-slate-500 italic">{rec.notes}</span>}
-                          </div>
-                        </div>
-                        <div className="flex gap-3 shrink-0">
-                          <button onClick={() => setEditRecord(rec)} className="text-slate-400 hover:text-white text-sm">Edit</button>
-                          <button onClick={() => setDeleteRecord(rec)} className="text-red-400 hover:text-red-300 text-sm">Delete</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            );
-          })}
-        </div>
-      )}
-
       {tab === 'practice' && (
         <div className="p-4 md:p-6 space-y-6">
           {practiceSessions?.length === 0 ? (
@@ -635,25 +581,6 @@ export function TeamDetailPage() {
         />
       )}
 
-      {(showRecordModal || editRecord) && (
-        <RecordFormModal
-          teamId={id}
-          record={editRecord}
-          type={addRecordType}
-          onClose={() => { setShowRecordModal(false); setAddRecordType(null); setEditRecord(null); }}
-        />
-      )}
-
-      {deleteRecord && (
-        <ConfirmDialog
-          title="Delete Record"
-          message={`Delete this ${deleteRecord.stat} record? This cannot be undone.`}
-          confirmLabel="Delete"
-          danger
-          onConfirm={async () => { await db.records.delete(deleteRecord.id); setDeleteRecord(null); }}
-          onCancel={() => setDeleteRecord(null)}
-        />
-      )}
     </div>
   );
 }
