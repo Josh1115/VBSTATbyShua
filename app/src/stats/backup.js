@@ -12,7 +12,7 @@ const REQUIRED_TABLES = [
 // Tables added in later schema versions; absent in older backups → treated as empty
 const OPTIONAL_TABLES = [
   'saved_lineups', 'records', 'practice_sessions',
-  'opp_tendencies', 'timeouts', 'historical_records',
+  'opp_tendencies', 'timeouts', 'historical_records', 'season_history',
 ];
 
 const ALL_TABLES = [...REQUIRED_TABLES, ...OPTIONAL_TABLES];

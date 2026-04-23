@@ -334,16 +334,26 @@ export function ReportsPage() {
     });
   }
 
-  // When specific matches are selected, conference/site/type chips are hidden
-  const showChipFilters = !selectedMatchIds?.length;
+  // When specific matches are selected OR L5 is active, conference/site/type chips are hidden
+  const showChipFilters = !selectedMatchIds?.length && result !== 'l5';
 
-  // Build active filters object
+  // Build active filters object. L5 and individual match selection are mutually exclusive
+  // with the conf/location/type chip filters — they use matchIds only.
   const activeFilters = {};
-  if (selectedMatchIds?.length) activeFilters.matchIds = selectedMatchIds;
-  if (showChipFilters && conference) activeFilters.conference = conference;
-  if (showChipFilters && location)   activeFilters.location   = location;
-  if (showChipFilters && matchTypes.length) activeFilters.matchType = matchTypes;
-  if (showChipFilters && result)     activeFilters.result     = result;
+  if (selectedMatchIds?.length) {
+    activeFilters.matchIds = selectedMatchIds;
+  } else if (result === 'l5') {
+    const last5 = (seasonMatches ?? [])
+      .filter((m) => m.status !== 'scheduled')
+      .slice(-5)
+      .map((m) => m.id);
+    if (last5.length) activeFilters.matchIds = last5;
+  } else {
+    if (conference) activeFilters.conference = conference;
+    if (location)   activeFilters.location   = location;
+    if (matchTypes.length) activeFilters.matchType = matchTypes;
+    if (result)     activeFilters.result     = result;
+  }
   const hasFilters = Object.keys(activeFilters).length > 0;
 
   // Short date label for match chips — "3/15"
@@ -365,7 +375,7 @@ export function ReportsPage() {
         .finally(() => setLoading(false));
     }, 150);
     return () => clearTimeout(statsDebounceRef.current);
-  }, [selectedSeasonId, selectedMatchIds, conference, location, matchTypes, result]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedSeasonId, selectedMatchIds, conference, location, matchTypes, result, seasonMatches]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const playerRows = useMemo(() =>
     stats && !stats.empty
@@ -565,38 +575,44 @@ export function ReportsPage() {
         );
       })()}
 
-      {/* Conf / site / type chip filters — hidden when specific matches are selected */}
-      {selectedSeasonId && showChipFilters && (
+      {/* Conf / site / type chip filters — hidden when specific matches or L5 selected */}
+      {selectedSeasonId && (
         <div className="px-4 pb-3 space-y-2">
-          <div className="flex gap-1.5 flex-wrap items-center">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Conf</span>
-            {[['', 'All'], ['conference', 'Conference'], ['non-con', 'Non-Con']].map(([val, label]) => (
-              <button key={val} onClick={() => setConference(val)} className={chipClass(conference === val)}>{label}</button>
-            ))}
-          </div>
-          <div className="flex gap-1.5 flex-wrap items-center">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Location</span>
-            {[['', 'All'], ['home', 'Home'], ['away', 'Away'], ['neutral', 'Neutral']].map(([val, label]) => (
-              <button key={val} onClick={() => setLocation(val)} className={chipClass(location === val)}>{label}</button>
-            ))}
-          </div>
-          <div className="flex gap-1.5 flex-wrap items-center">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Type</span>
-            <button onClick={() => setMatchTypes([])} className={chipClass(matchTypes.length === 0)}>All</button>
-            {[['reg-season', 'Reg Season'], ['tourney', 'Tourney'], ['ihsa-playoffs', 'Playoffs'], ['exhibition', 'Exhibition']].map(([val, label]) => (
-              <button
-                key={val}
-                onClick={() => setMatchTypes(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val])}
-                className={chipClass(matchTypes.includes(val))}
-              >{label}</button>
-            ))}
-          </div>
-          <div className="flex gap-1.5 flex-wrap items-center">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Result</span>
-            {[['', 'All'], ['win', 'Win'], ['loss', 'Loss']].map(([val, label]) => (
-              <button key={val} onClick={() => setResult(val)} className={chipClass(result === val)}>{label}</button>
-            ))}
-          </div>
+          {showChipFilters && (
+            <>
+              <div className="flex gap-1.5 flex-wrap items-center">
+                <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Conf</span>
+                {[['', 'All'], ['conference', 'Conference'], ['non-con', 'Non-Con']].map(([val, label]) => (
+                  <button key={val} onClick={() => setConference(val)} className={chipClass(conference === val)}>{label}</button>
+                ))}
+              </div>
+              <div className="flex gap-1.5 flex-wrap items-center">
+                <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Location</span>
+                {[['', 'All'], ['home', 'Home'], ['away', 'Away'], ['neutral', 'Neutral']].map(([val, label]) => (
+                  <button key={val} onClick={() => setLocation(val)} className={chipClass(location === val)}>{label}</button>
+                ))}
+              </div>
+              <div className="flex gap-1.5 flex-wrap items-center">
+                <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Type</span>
+                <button onClick={() => setMatchTypes([])} className={chipClass(matchTypes.length === 0)}>All</button>
+                {[['reg-season', 'Reg Season'], ['tourney', 'Tourney'], ['ihsa-playoffs', 'Playoffs'], ['exhibition', 'Exhibition']].map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setMatchTypes(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val])}
+                    className={chipClass(matchTypes.includes(val))}
+                  >{label}</button>
+                ))}
+              </div>
+            </>
+          )}
+          {!selectedMatchIds?.length && (
+            <div className="flex gap-1.5 flex-wrap items-center">
+              <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-1">Result</span>
+              {[['', 'All'], ['win', 'Win'], ['loss', 'Loss'], ['l5', 'L5']].map(([val, label]) => (
+                <button key={val} onClick={() => setResult(val)} className={chipClass(result === val)}>{label}</button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

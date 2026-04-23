@@ -257,6 +257,36 @@
   animation: trophy-twinkle 3.6s ease-in-out infinite;
 }
 
+@keyframes book-open {
+  0%   { transform: scale(1);            filter: drop-shadow(0 0 0px transparent); }
+  8%   { transform: scale(1.22);         filter: drop-shadow(0 0 7px rgb(var(--color-primary-rgb))) drop-shadow(0 0 14px rgba(var(--color-primary-rgb),0.45)); }
+  18%  { transform: scale(1);            filter: drop-shadow(0 0 3px rgb(var(--color-primary-rgb))); }
+  28%  { transform: scale(1.06) rotate(-5deg); filter: drop-shadow(0 0 0px transparent); }
+  38%  { transform: scale(1)   rotate(0deg);  }
+  100% { transform: scale(1);            filter: drop-shadow(0 0 0px transparent); }
+}
+.animate-book-open {
+  animation: book-open 3.4s ease-in-out infinite;
+}
+
+@keyframes confetti-fall {
+  0%   { transform: translateX(0) translateY(-6px) rotate(0deg); opacity: 1; }
+  80%  { opacity: 0.6; }
+  100% { transform: translateX(var(--offset, 0px)) translateY(22px) rotate(var(--rot, 180deg)); opacity: 0; }
+}
+.confetti-piece {
+  position: absolute;
+  width: 3px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--c, #f97316);
+  top: 0;
+  left: calc(50% + var(--offset, 0px));
+  transform-origin: center;
+  animation: confetti-fall 1.1s ease-in var(--delay, 0ms) infinite;
+  pointer-events: none;
+}
+
 /* ── Item 26: Score nudge popup bounce entrance ── */
 @keyframes nudge-pop {
   from { opacity: 0; transform: scale(0.8); }
@@ -986,5 +1016,14 @@
 .perfect-pass-pop {
   animation: perfect-pass-pop 820ms ease-out forwards;
   pointer-events: none;
+}
+
+/* ── Medal pulse on Records leaderboard ── */
+@keyframes medal-pulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.15); }
+}
+.animate-medal-pulse {
+  animation: medal-pulse 2s ease-in-out infinite;
 }
 

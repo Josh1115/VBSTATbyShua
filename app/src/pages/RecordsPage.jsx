@@ -20,10 +20,11 @@ const RECORD_STATS = [
 ];
 
 const TABS = [
-  { value: 'season',     label: 'Season'     },
-  { value: 'career',     label: 'Career'     },
-  { value: 'match',      label: 'Match'      },
-  { value: 'team_match', label: 'Team Match' },
+  { value: 'season',      label: 'Season'      },
+  { value: 'team_season', label: 'Team Season' },
+  { value: 'career',      label: 'Career'      },
+  { value: 'match',       label: 'Match'        },
+  { value: 'team_match',  label: 'Team Match'  },
 ];
 
 const RANK_ICONS = { 1: '🥇', 2: '🥈', 3: '🥉' };
@@ -137,6 +138,36 @@ async function computeLeaderboards(tab, teamId, currentSeasonId) {
     );
   }
 
+  // team_season tab — best team stats aggregated per season
+  if (tab === 'team_season') {
+    const matchesBySeason = {};
+    for (const m of allMatches) {
+      if (!matchesBySeason[m.season_id]) matchesBySeason[m.season_id] = [];
+      matchesBySeason[m.season_id].push(m);
+    }
+
+    const seasonRows = [];
+    for (const season of seasons) {
+      const sMatches = matchesBySeason[season.id] ?? [];
+      if (!sMatches.length) continue;
+      const sContacts = sMatches.flatMap(m => byMatch.get(m.id) ?? []);
+      const totalSets = Math.max(1, sMatches.reduce((a, m) => a + (setsMap[m.id] ?? 1), 0));
+      const ts = computeTeamStats(sContacts, totalSets);
+      seasonRows.push({ ts, year: season.year, currentSeason: currentSeasonId != null && season.id === currentSeasonId });
+    }
+
+    return Object.fromEntries(
+      RECORD_STATS.map(({ key }) => {
+        const computed = seasonRows.map(({ ts, year, currentSeason }) => ({
+          val: getStatValue(ts, key),
+          year,
+          currentSeason,
+        }));
+        return [key, mergeAndRank(computed, historicalRows(key))];
+      })
+    );
+  }
+
   // career tab — manual entries only, no DB computation
   if (tab === 'career') {
     return Object.fromEntries(
@@ -195,9 +226,9 @@ function AddRecordModal({ teamId, tab, statKey, onClose, recordId, initialData }
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const isIndividual   = tab !== 'team_match';
+  const isIndividual   = tab !== 'team_match' && tab !== 'team_season';
   const needsOpponent  = tab === 'match' || tab === 'team_match';
-  const needsSeason    = tab === 'season';
+  const needsSeason    = tab === 'season' || tab === 'team_season';
   const needsClassYear  = isIndividual && (tab === 'season' || tab === 'match');
   const needsCareerYears = tab === 'career';
 
@@ -327,19 +358,48 @@ function AddRecordModal({ teamId, tab, statKey, onClose, recordId, initialData }
   );
 }
 
+// ── Season Title Panel ────────────────────────────────────────────────────────
+
+function SeasonTitleRow({ entry }) {
+  const [title, setTitle] = useState(entry.title ?? '');
+
+  useEffect(() => { setTitle(entry.title ?? ''); }, [entry.title]);
+
+  async function handleBlur() {
+    const t = title.trim();
+    if (t !== (entry.title ?? '')) {
+      await db.season_history.update(entry.id, { title: t || null });
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3 bg-slate-800 rounded-xl px-3 py-2">
+      <span className="text-xs font-bold text-slate-400 shrink-0 w-16 tabular-nums">{entry.year}</span>
+      <input
+        className="flex-1 bg-transparent text-sm text-slate-100 placeholder-slate-600 focus:outline-none"
+        placeholder="Season title…"
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        onBlur={handleBlur}
+        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+      />
+    </div>
+  );
+}
+
 // ── LeaderboardRow ────────────────────────────────────────────────────────────
 
 function LeaderboardRow({ row, tab, fmt, onEdit, onDelete }) {
   const [swiped, setSwiped] = useState(false);
   const startX = useRef(0);
-  const showPlayer = tab !== 'team_match';
+  const showPlayer = tab !== 'team_match' && tab !== 'team_season';
   const showRight  = tab === 'match' || tab === 'team_match';
 
-  const bgCls = row.active
-    ? 'bg-yellow-950'
-    : row.currentSeason
-      ? 'bg-yellow-950'
-      : 'bg-slate-800';
+  const bgCls = row.rank === 1 ? 'bg-[#555232]'
+    : row.rank === 2 ? 'bg-[#424b5a]'
+    : row.rank === 3 ? 'bg-[#472f2f]'
+    : row.active || row.currentSeason ? 'bg-yellow-950'
+    : 'bg-slate-800';
 
   const inner = (
     <div
@@ -355,13 +415,15 @@ function LeaderboardRow({ row, tab, fmt, onEdit, onDelete }) {
         else if (delta > 20) setSwiped(false);
       } : undefined}
     >
-      <span className="w-6 text-center text-sm shrink-0">
-        {RANK_ICONS[row.rank] ?? <span className="text-xs font-bold text-slate-500">{row.rank}</span>}
+      <span className="w-10 flex items-center justify-center shrink-0">
+        {RANK_ICONS[row.rank]
+          ? <span className="text-4xl leading-none inline-block animate-medal-pulse">{RANK_ICONS[row.rank]}</span>
+          : <span className="text-sm font-bold text-slate-500">{row.rank}</span>}
       </span>
 
       <span className="flex-1 min-w-0 flex items-center gap-2">
         {showPlayer && (
-          <span className="text-sm text-slate-200 truncate min-w-0">
+          <span className={`text-sm truncate min-w-0 ${row.rank <= 3 ? 'text-white font-bold' : 'text-slate-200'}`}>
             {row.name}
             {tab === 'season' && row.year && (
               <span className="ml-1.5 text-xs text-slate-500">· {row.year}</span>
@@ -378,9 +440,12 @@ function LeaderboardRow({ row, tab, fmt, onEdit, onDelete }) {
             )}
           </span>
         )}
-        <span className="font-black tabular-nums text-primary text-base shrink-0">
+        <span className={`font-black tabular-nums text-primary shrink-0 ${row.rank <= 3 ? 'text-lg' : 'text-base'}`}>
           {fmt(row.val)}
         </span>
+        {tab === 'team_season' && row.year && (
+          <span className="text-xs text-white font-semibold">{row.year}</span>
+        )}
       </span>
 
       {showRight && (
@@ -394,11 +459,11 @@ function LeaderboardRow({ row, tab, fmt, onEdit, onDelete }) {
 
   if (!row.historical) return inner;
 
-  const borderCls = row.active
-    ? 'border border-yellow-500/20'
-    : row.currentSeason
-      ? 'border border-yellow-500/20'
-      : 'border border-slate-700/50';
+  const borderCls = row.rank === 1 ? 'border border-yellow-400/30'
+    : row.rank === 2 ? 'border border-zinc-300/20'
+    : row.rank === 3 ? 'border border-orange-600/25'
+    : row.active || row.currentSeason ? 'border border-yellow-500/20'
+    : 'border border-slate-700/50';
 
   return (
     <div className={`relative overflow-hidden rounded-lg ${borderCls}`}>
@@ -445,6 +510,13 @@ export function RecordsPage() {
   );
   const historicalCount = useLiveQuery(
     () => teamId ? db.historical_records.where('team_id').equals(teamId).count() : Promise.resolve(0),
+    [teamId]
+  );
+  const seasonHistories = useLiveQuery(
+    () => teamId
+      ? db.season_history.where('team_id').equals(teamId).toArray()
+          .then(rows => rows.sort((a, b) => String(b.year).localeCompare(String(a.year))))
+      : Promise.resolve([]),
     [teamId]
   );
 
@@ -565,6 +637,15 @@ export function RecordsPage() {
               <EmptyState icon="📋" title={gender ? 'Select a team' : 'Select Girls or Boys'} description="" />
             ) : (
               <>
+                {seasonHistories?.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-500">Season Titles</p>
+                    {seasonHistories.map(entry => (
+                      <SeasonTitleRow key={entry.id} entry={entry} />
+                    ))}
+                  </div>
+                )}
+
                 <div className="flex bg-slate-800 rounded-xl p-1 gap-1">
                   {TABS.map(t => (
                     <button
