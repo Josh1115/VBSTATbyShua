@@ -6,6 +6,7 @@ import { ACTION, RESULT, SERVE_TYPE, SIDE } from '../../constants';
 import { getStorageItem, STORAGE_KEYS } from '../../utils/storage';
 import { fmtPlayerName } from '../../stats/formatters';
 import { playSound } from '../../utils/sound';
+import { AssistPickerModal } from '../match/AssistPickerModal';
 
 // ── Module-level style constants — defined once, never re-created on render ──
 const JERSEY_SVG_STYLE = { width: '121%', height: '3.025vmin', top: '50%', left: '-10.5%', transform: 'translateY(-50%)' };
@@ -80,24 +81,26 @@ const LIGHT_JERSEYS = new Set(['white', 'gray', 'yellow']);
 
 export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, heat, stats, zoneHints, isSubIn = false, isDimmed = false }) {
   const {
-    recordContact, addPoint, tapHblk, recordOppBlock,
+    recordContact, addPoint, tapHblk, recordOppBlock, recordAssistForKill,
     pendingHblk, serveSide, rallyPhase,
     liberoId, playerNicknames, teamJerseyColor, liberoJerseyColor,
-    rallyCount, rotationNum,
+    rallyCount, rotationNum, lineup,
   } = useMatchStore(useShallow((s) => ({
-    recordContact:     s.recordContact,
-    addPoint:          s.addPoint,
-    tapHblk:           s.tapHblk,
-    recordOppBlock:    s.recordOppBlock,
-    pendingHblk:       s.pendingHblk,
-    serveSide:         s.serveSide,
-    rallyPhase:        s.rallyPhase,
-    liberoId:          s.liberoId,
-    playerNicknames:   s.playerNicknames,
-    teamJerseyColor:   s.teamJerseyColor,
-    liberoJerseyColor: s.liberoJerseyColor,
-    rallyCount:        s.rallyCount,
-    rotationNum:       s.rotationNum,
+    recordContact:       s.recordContact,
+    addPoint:            s.addPoint,
+    tapHblk:             s.tapHblk,
+    recordOppBlock:      s.recordOppBlock,
+    recordAssistForKill: s.recordAssistForKill,
+    pendingHblk:         s.pendingHblk,
+    serveSide:           s.serveSide,
+    rallyPhase:          s.rallyPhase,
+    liberoId:            s.liberoId,
+    playerNicknames:     s.playerNicknames,
+    teamJerseyColor:     s.teamJerseyColor,
+    liberoJerseyColor:   s.liberoJerseyColor,
+    rallyCount:          s.rallyCount,
+    rotationNum:         s.rotationNum,
+    lineup:              s.lineup,
   })));
 
   const showToast    = useUiStore((s) => s.showToast);
@@ -107,13 +110,15 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
   const jerseyHex    = JERSEY_HEX[jerseyColor] ?? JERSEY_HEX['black'];
   const numberColor  = LIGHT_JERSEYS.has(jerseyColor) ? '#1e293b' : '#f1f5f9';
   const jerseyRef   = useRef(null);
-  const [serveType,     setServeType]     = useState(null);
-  const [serveRecorded, setServeRecorded] = useState(false);
-  const [sePending,     setSePending]     = useState(false);
-  const [aePending,     setAePending]     = useState(false);
-  const [kPending,      setKPending]      = useState(false);
-  const [passRing,      setPassRing]      = useState(null); // null | 0|1|2|3
-  const [passBadge,     setPassBadge]     = useState(null); // null | { rating, key }
+  const [serveType,          setServeType]          = useState(null);
+  const [serveRecorded,      setServeRecorded]      = useState(false);
+  const [sePending,          setSePending]          = useState(false);
+  const [aePending,          setAePending]          = useState(false);
+  const [kPending,           setKPending]           = useState(false);
+  const [assistPickerOpen,   setAssistPickerOpen]   = useState(false);
+  const [pendingKillId,      setPendingKillId]      = useState(null);
+  const [passRing,           setPassRing]           = useState(null); // null | 0|1|2|3
+  const [passBadge,          setPassBadge]          = useState(null); // null | { rating, key }
   const passRingTimer  = useRef(null);
   const passBadgeTimer = useRef(null);
 
@@ -124,6 +129,8 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
     setServeType(null);
     setSePending(false);
     setAePending(false);
+    setAssistPickerOpen(false);
+    setPendingKillId(null);
   }, [rallyCount, serveSide]);
 
   // When UNDO reverses a serve contact, rallyPhase returns to 'pre_serve' but
@@ -135,6 +142,8 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
       setServeType(null);
       setSePending(false);
       setAePending(false);
+      setAssistPickerOpen(false);
+      setPendingKillId(null);
     }
   }, [rallyPhase]);
 
@@ -217,6 +226,21 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
     () => getStorageItem(STORAGE_KEYS.PLAYER_NAME_FORMAT, 'initial_last'),
     []
   );
+
+  const handleAssistSelect = (assistPlayerId) => {
+    if (pendingKillId) recordAssistForKill(pendingKillId, assistPlayerId);
+    setAssistPickerOpen(false);
+    setPendingKillId(null);
+  };
+
+  const handleAssistDismiss = () => {
+    if (pendingKillId) {
+      const setter = lineup.find((sl) => sl.positionLabel === 'S' && sl.playerId && sl.playerId !== slot?.playerId);
+      if (setter) recordAssistForKill(pendingKillId, setter.playerId);
+    }
+    setAssistPickerOpen(false);
+    setPendingKillId(null);
+  };
 
   const tileStats = useMemo(() => {
     const s = stats;
@@ -479,10 +503,10 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
                 onTap={() => setKPending(false)}
                 cls="bg-slate-700 text-slate-300 hover:bg-slate-600" />
               <Btn label="PURE"
-                onTap={() => { tapAndScore(ACTION.ATTACK, RESULT.KILL, { kill_type: 'pure' }); setKPending(false); }}
+                onTap={async () => { setKPending(false); const id = await tapAndScore(ACTION.ATTACK, RESULT.KILL, { kill_type: 'pure' }); if (id) { setPendingKillId(id); setAssistPickerOpen(true); } }}
                 cls="bg-orange-600/80 text-white hover:bg-orange-500/90 serve-unlock-btn" />
               <Btn label="TOOL"
-                onTap={() => { tapAndScore(ACTION.ATTACK, RESULT.KILL, { kill_type: 'tool' }); setKPending(false); }}
+                onTap={async () => { setKPending(false); const id = await tapAndScore(ACTION.ATTACK, RESULT.KILL, { kill_type: 'tool' }); if (id) { setPendingKillId(id); setAssistPickerOpen(true); } }}
                 cls="bg-amber-700/80 text-amber-100 hover:bg-amber-600/90 serve-unlock-btn"
                 style={DELAY_50} />
               <Btn label="OVER"
@@ -490,11 +514,11 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
                 cls="bg-yellow-800/80 text-yellow-200 hover:bg-yellow-700/90 serve-unlock-btn"
                 style={DELAY_100} />
               <Btn label="TIP"
-                onTap={() => { tapAndScore(ACTION.ATTACK, RESULT.KILL, { kill_type: 'tip' }); setKPending(false); }}
+                onTap={async () => { setKPending(false); const id = await tapAndScore(ACTION.ATTACK, RESULT.KILL, { kill_type: 'tip' }); if (id) { setPendingKillId(id); setAssistPickerOpen(true); } }}
                 cls="bg-lime-900/80 text-lime-300 hover:bg-lime-800/90 serve-unlock-btn"
                 style={DELAY_150} />
               <Btn label="BK ROW"
-                onTap={() => { tapAndScore(ACTION.ATTACK, RESULT.KILL, { kill_type: 'bk' }); setKPending(false); }}
+                onTap={async () => { setKPending(false); const id = await tapAndScore(ACTION.ATTACK, RESULT.KILL, { kill_type: 'bk' }); if (id) { setPendingKillId(id); setAssistPickerOpen(true); } }}
                 cls="bg-orange-900/80 text-orange-300 hover:bg-orange-800/90 serve-unlock-btn !text-[1.8vmin] whitespace-nowrap"
                 style={DELAY_200} />
             </>
@@ -561,6 +585,17 @@ export const PlayerTile = memo(function PlayerTile({ slot, position, isServer, h
         </div>
 
       </div>
+
+      <AssistPickerModal
+        open={assistPickerOpen}
+        attackerPlayerId={slot?.playerId}
+        lineup={lineup}
+        liberoId={liberoId}
+        playerNicknames={playerNicknames}
+        nameFormat={nameFormat}
+        onSelect={handleAssistSelect}
+        onDismiss={handleAssistDismiss}
+      />
     </div>
   );
 });

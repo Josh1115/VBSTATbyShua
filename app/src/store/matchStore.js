@@ -427,20 +427,15 @@ export const useMatchStore = create((set, get) => ({
 
       case 'contact': {
         await db.contacts.delete(action.contactId);
-        if (action.autoSetId) {
-          await db.contacts.delete(action.autoSetId);
-        } else if (action.assistId) {
-          await db.contacts.update(action.assistId, { result: action.prevAssistResult ?? RESULT.ATTEMPT });
+        if (action.assistContactId) {
+          await db.contacts.delete(action.assistContactId);
         }
         set({
           actionHistory:     rest,
           committedContacts: s.committedContacts
-            .filter(c => c.id !== action.contactId && c.id !== action.autoSetId)
-            .map(c => !action.autoSetId && c.id === action.assistId ? { ...c, result: action.prevAssistResult ?? RESULT.ATTEMPT } : c),
+            .filter(c => c.id !== action.contactId && c.id !== action.assistContactId),
           lastFeedItem: null,
-          // Restore rallyPhase to what it was before this contact was recorded
           rallyPhase: action.prevRallyPhase ?? 'pre_serve',
-          // Clear lastSetContactId if the undone contact was the tracked setter contact
           ...(s.lastSetContactId === action.contactId ? { lastSetContactId: null } : {}),
           serveReticles: s.serveReticles.filter(r => r.contactId !== action.contactId),
           pendingServeContact: s.pendingServeContact?.contactId === action.contactId
@@ -450,20 +445,13 @@ export const useMatchStore = create((set, get) => ({
       }
 
       // Blocked attack: AE contact for home player + opp BLK contact bundled together.
-      // Identical to 'contact' undo but also deletes the opponent block contact.
       case 'blocked_attack': {
         await db.contacts.delete(action.contactId);
         if (action.blkContactId) await db.contacts.delete(action.blkContactId);
-        if (action.autoSetId) {
-          await db.contacts.delete(action.autoSetId);
-        } else if (action.assistId) {
-          await db.contacts.update(action.assistId, { result: action.prevAssistResult ?? RESULT.ATTEMPT });
-        }
         set({
           actionHistory:     rest,
           committedContacts: s.committedContacts
-            .filter(c => c.id !== action.contactId && c.id !== action.blkContactId && c.id !== action.autoSetId)
-            .map(c => !action.autoSetId && c.id === action.assistId ? { ...c, result: action.prevAssistResult ?? RESULT.ATTEMPT } : c),
+            .filter(c => c.id !== action.contactId && c.id !== action.blkContactId),
           lastFeedItem: null,
           rallyPhase: action.prevRallyPhase ?? 'pre_serve',
         });
@@ -615,47 +603,9 @@ export const useMatchStore = create((set, get) => ({
 
     let newCommittedContacts = [...s.committedContacts, { ...contactFull, id }];
 
-    let assistId        = null;
-    let autoSetId       = null;
-    let prevAssistResult = null;
-
-    if (contactData.action === ACTION.ATTACK) {
-      // Auto-record SET ATT for the back row setter on every attack
-      const backRowSetter = s.lineup.find(
-        (sl) => sl.positionLabel === 'S' && [1, 5, 6].includes(sl.position)
-      );
-      if (backRowSetter && backRowSetter.playerId !== contactData.player_id) {
-        const isKill = contactData.result === RESULT.KILL;
-        const autoSetContact = {
-          match_id:     s.matchId,
-          set_id:       s.currentSetId,
-          rotation_num: s.rotationNum,
-          serve_side:   s.serveSide,
-          timestamp:    Date.now() + 1,
-          player_id:    backRowSetter.playerId,
-          action:       ACTION.SET,
-          result:       isKill ? RESULT.ASSIST : RESULT.ATTEMPT,
-        };
-        autoSetId = await db.contacts.add(autoSetContact);
-        newCommittedContacts = [...newCommittedContacts, { ...autoSetContact, id: autoSetId }];
-      } else if (contactData.result === RESULT.KILL) {
-        // No back row setter — back-assign assist to last manual SET contact (O(1) lookup)
-        const lsid = s.lastSetContactId;
-        if (lsid != null) {
-          const lastSetContact = s.committedContacts.find((c) => c.id === lsid);
-          if (lastSetContact) {
-            assistId = lastSetContact.id;
-            prevAssistResult = lastSetContact.result;
-            await db.contacts.update(lastSetContact.id, { result: RESULT.ASSIST });
-            newCommittedContacts = replaceOneContact(newCommittedContacts, lastSetContact.id, { result: RESULT.ASSIST });
-          }
-        }
-      }
-    }
-
     const prevHistory = get().actionHistory;
     set({
-      actionHistory:     [{ type: 'contact', contactId: id, assistId, prevAssistResult, autoSetId, prevRallyPhase: s.rallyPhase }, ...prevHistory],
+      actionHistory:     [{ type: 'contact', contactId: id, prevRallyPhase: s.rallyPhase }, ...prevHistory],
       committedContacts: newCommittedContacts,
       // Track last SET contact id so assist back-assignment is O(1) instead of O(n)
       ...(contactData.action === ACTION.SET ? { lastSetContactId: id } : {}),
@@ -684,6 +634,48 @@ export const useMatchStore = create((set, get) => ({
     }
 
     return id;
+  },
+
+  // Records a SET ASSIST contact for the player who set the kill.
+  // Called by PlayerTile after the assist picker resolves.
+  // killContactId: the contact id of the kill — used to link assist into undo.
+  // assistPlayerId: the player awarded the assist, or null for unassisted.
+  recordAssistForKill: async (killContactId, assistPlayerId) => {
+    if (!assistPlayerId) return;
+    const s = get();
+    const killContact = s.committedContacts.find((c) => c.id === killContactId);
+    const assistContact = {
+      match_id:     killContact?.match_id     ?? s.matchId,
+      set_id:       killContact?.set_id       ?? s.currentSetId,
+      rotation_num: killContact?.rotation_num ?? s.rotationNum,
+      rally_number: killContact?.rally_number ?? s.rallyCount,
+      serve_side:   killContact?.serve_side   ?? s.serveSide,
+      timestamp:    Date.now(),
+      player_id:    assistPlayerId,
+      action:       ACTION.SET,
+      result:       RESULT.ASSIST,
+    };
+    let assistId;
+    try {
+      assistId = await db.contacts.add(assistContact);
+    } catch (err) {
+      console.error('[VBStat] recordAssistForKill failed:', err);
+      return;
+    }
+    set((cur) => ({
+      committedContacts: [...cur.committedContacts, { ...assistContact, id: assistId }],
+      actionHistory: cur.actionHistory.map((a) =>
+        a.type === 'contact' && a.contactId === killContactId
+          ? { ...a, assistContactId: assistId }
+          : a
+      ),
+    }));
+
+    const slot = s.lineup.find((p) => p.playerId === assistPlayerId);
+    if (slot) {
+      const lastName = slot.playerName?.split(' ').pop() ?? 'Player';
+      setFeed(set, `${lastName} Assist`);
+    }
   },
 
   // Records an opponent block (BLK solo) without awarding a point.
