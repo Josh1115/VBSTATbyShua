@@ -216,7 +216,7 @@ const TimeoutBox = memo(function TimeoutBox({ used, onTap }) {
           <span
             key={`${i}-${isUsed}`}
             className={`inline-flex items-center justify-center rounded-full border-2
-              w-[2.2vmin] h-[2.2vmin] text-[1.2vmin] font-black leading-none
+              w-[3.2vmin] h-[3.2vmin] text-[1.6vmin] font-black leading-none
               ${isUsed
                 ? 'border-red-600 text-red-500 bg-red-950/30 timeout-pip-pop'
                 : 'border-slate-400 bg-slate-500/50 text-transparent'

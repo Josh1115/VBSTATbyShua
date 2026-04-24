@@ -78,16 +78,16 @@ export const LiberoBox = memo(function LiberoBox({ liberoPlayer, onAssignLibero 
 
   // Libero is on bench — show libero info
   return (
-    <div className={`flex items-center gap-1.5 px-2 py-0.5 bg-black/30 rounded border transition-colors ${pulse ? 'border-emerald-400 animate-libero-pulse' : 'border-slate-700'}`}>
+    <div className={`flex items-center gap-3 px-5 py-0.5 bg-black/30 rounded border transition-colors ${pulse ? 'border-emerald-400 animate-libero-pulse' : 'border-slate-700'}`}>
       <div className="flex flex-col leading-none">
         <span className="text-xs text-emerald-400 font-bold">#{liberoPlayer.jersey_number}</span>
-        <span className="text-xs text-slate-300 truncate max-w-[9.4vmin]">{lastName(liberoPlayer.name)}</span>
+        <span className="text-xs text-slate-300 truncate max-w-[20vmin]">{lastName(liberoPlayer.name)}</span>
       </div>
 
       <button
         disabled={!canSwap}
         onPointerDown={(e) => { e.preventDefault(); swapLibero(liberoPlayer); }}
-        className={`text-xs font-bold px-2.5 py-1.5 rounded leading-none border transition-colors
+        className={`text-[2vmin] font-bold min-w-[20vmin] py-2 rounded leading-none border transition-colors text-center
           ${canSwap
             ? 'bg-emerald-800 border-emerald-600 text-emerald-200 hover:bg-emerald-700'
             : 'bg-transparent border-slate-700 text-slate-700 cursor-not-allowed'
