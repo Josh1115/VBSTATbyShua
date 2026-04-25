@@ -257,6 +257,22 @@ export function computeOppDisplayStats(contacts) {
 }
 
 /**
+ * Per-player points earned while serving (SRV PT).
+ * Counts rallies where we were serving and won the point, keyed by server_player_id.
+ * Returns { [playerId]: count }
+ */
+export function computeServingPoints(rallies) {
+  const pts = {};
+  for (const r of rallies) {
+    if (r.serve_side === 'us' && r.point_winner === 'us' && r.server_player_id) {
+      const pid = r.server_player_id;
+      pts[pid] = (pts[pid] ?? 0) + 1;
+    }
+  }
+  return pts;
+}
+
+/**
  * Rotation & sideout stats from a rallies array.
  * Returns { so_pct, bp_pct, rotations: { 1..6: { so_pct, bp_pct, ... } } }
  */
@@ -768,6 +784,7 @@ export async function computeMatchStats(matchId) {
     freeDigWin:       computeFreeDigWin(contacts, rallies, rallyMap),
     runs:             computeRunsByRotation(rallies),
     pointQuality:     computePointQuality(contacts),
+    servingPoints:    computeServingPoints(rallies),
     setsPlayed,
     contacts,
   };

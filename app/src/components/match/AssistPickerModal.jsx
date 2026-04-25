@@ -23,10 +23,10 @@ export const AssistPickerModal = memo(function AssistPickerModal({
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75"
+      className="fixed inset-0 z-[200] bg-black/75"
       onPointerDown={(e) => { if (e.target === e.currentTarget) onDismiss(); }}
     >
-      <div className="bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl w-72 overflow-hidden">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-800 border border-slate-600 rounded-2xl shadow-2xl w-72 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 bg-slate-900/60">
           <div>

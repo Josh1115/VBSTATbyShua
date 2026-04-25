@@ -6,6 +6,7 @@ import { db } from '../db/schema';
 import { computeMatchStats,
          computePlayerStats, computeTeamStats, computeRotationStats, computePointQuality,
          computeServeZoneStats, computeISvsOOS, computeTransitionAttack,
+         computeServingPoints,
          computePQ, computeSetWinProb, computeMatchWinProb,
          aggregateXKTeamStats } from '../stats/engine';
 import { getRalliesForMatch } from '../stats/queries';
@@ -709,6 +710,7 @@ export function MatchSummaryPage() {
       serveZones:       computeServeZoneStats(fc),
       isOos:            computeISvsOOS(fc, fr),
       transitionAttack: computeTransitionAttack(fc, fr),
+      servingPoints:    computeServingPoints(fr),
     };
   }, [stats, rawRallies, selectedSetId]);
 
@@ -743,6 +745,7 @@ export function MatchSummaryPage() {
           id:   pid,
           name: `${playerNames[pid] ?? `#${pid}`}${correctedPlayerIds.has(Number(pid)) ? ' ✎' : ''}`,
           ...s,
+          srv_pt:   displayStats.servingPoints?.[pid] ?? 0,
           f_se_pct: s.f_sa > 0 ? s.f_se / s.f_sa : null,
           t_se_pct: s.t_sa > 0 ? s.t_se / s.t_sa : null,
         }))
@@ -801,7 +804,7 @@ export function MatchSummaryPage() {
     return {
       // Serving views
       all: {
-        name: 'TOTAL', sp, mp, sa, ace, se, se_ob, se_net,
+        name: 'TOTAL', sp, mp, sa, ace, srv_pt: sum('srv_pt'), se, se_ob, se_net,
         ace_pct:  sa > 0 ? ace / sa : null,
         se_pct:   sa > 0 ? se / sa : null,
         si_pct:   sa > 0 ? (sa - se) / sa : null,

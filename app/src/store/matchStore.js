@@ -344,11 +344,12 @@ export const useMatchStore = create((set, get) => ({
       liberoReplacedJersey,
       liberoReplacedPositionLabel,
       committedRallies: [...s.committedRallies, {
-        set_id:       s.currentSetId,
-        rally_number: rallyCount,
-        serve_side:   serveSide,
-        point_winner: side,
-        our_rotation: rotationNum,
+        set_id:            s.currentSetId,
+        rally_number:      rallyCount,
+        serve_side:        serveSide,
+        point_winner:      side,
+        our_rotation:      rotationNum,
+        server_player_id:  serveSide === SIDE.US ? lineup[0]?.playerId ?? null : null,
       }],
     });
 
@@ -361,12 +362,13 @@ export const useMatchStore = create((set, get) => ({
     //   corrupt the live scoreboard in a way the user can't recover from.
     try {
       const rallyId = await db.rallies.add({
-        set_id:       s.currentSetId,
-        rally_number: rallyCount,
-        serve_side:   serveSide,
-        point_winner: side,
-        our_rotation: rotationNum,
-        timestamp:    Date.now(),
+        set_id:            s.currentSetId,
+        rally_number:      rallyCount,
+        serve_side:        serveSide,
+        point_winner:      side,
+        our_rotation:      rotationNum,
+        server_player_id:  serveSide === SIDE.US ? lineup[0]?.playerId ?? null : null,
+        timestamp:         Date.now(),
       });
 
       // Backfill real rallyId so undo can delete the correct row

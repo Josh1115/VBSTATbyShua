@@ -26,9 +26,10 @@ export const SERVING_COLS = {
   all: [
     { key: 'name',     label: 'Player' },
     ...SP_MP_COLS,
-    { key: 'sa',       label: 'SA',    fmt: fmtCount },
-    { key: 'ace',      label: 'ACE',   fmt: fmtCount },
-    { key: 'se',       label: 'SE',    fmt: fmtCount },
+    { key: 'sa',       label: 'SA',     fmt: fmtCount },
+    { key: 'ace',      label: 'ACE',    fmt: fmtCount },
+    { key: 'srv_pt',   label: 'SRV PT', fmt: fmtCount },
+    { key: 'se',       label: 'SE',     fmt: fmtCount },
     { key: 'se_ob',    label: 'SOB',   fmt: fmtCount },
     { key: 'se_net',   label: 'SNET',  fmt: fmtCount },
     { key: 'se_foot',  label: 'FOOT',  fmt: fmtCount },
