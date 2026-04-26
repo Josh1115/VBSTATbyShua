@@ -2,6 +2,27 @@ import Dexie from 'dexie';
 
 export const db = new Dexie('VBAPPv2');
 
+// v15: add tourney_entries table for manual tournament history.
+db.version(15).stores({
+  rallies:            '++id, set_id, rally_number',
+  sets:               '++id, match_id, set_number',
+  lineups:            '++id, set_id, player_id',
+  substitutions:      '++id, set_id, rally_number',
+  organizations:      '++id, name, type',
+  teams:              '++id, org_id, name',
+  seasons:            '++id, team_id, year',
+  players:            '++id, team_id, is_active',
+  opponents:          '++id, name',
+  saved_lineups:      '++id, team_id',
+  contacts:           '++id, match_id, player_id, action, set_id, rally_id, rotation_num',
+  matches:            '++id, season_id, status, date, opponent_id',
+  opp_tendencies:     '++id, opp_id, match_id',
+  timeouts:           '++id, match_id, set_id',
+  historical_records: '++id, team_id, category, stat',
+  season_history:     '++id, team_id, year',
+  tourney_entries:    '++id, team_id, year',
+});
+
 // v14: add season_history table for per-season program history.
 db.version(14).stores({
   rallies:            '++id, set_id, rally_number',

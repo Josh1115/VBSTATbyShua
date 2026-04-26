@@ -25,6 +25,7 @@ const TABS = [
   { value: 'career',      label: 'Career'      },
   { value: 'match',       label: 'Match'        },
   { value: 'team_match',  label: 'Team Match'  },
+  { value: 'tourney',     label: 'Tourney'     },
 ];
 
 const RANK_ICONS = { 1: '🥇', 2: '🥈', 3: '🥉' };
@@ -486,6 +487,272 @@ function LeaderboardRow({ row, tab, fmt, onEdit, onDelete }) {
   );
 }
 
+// ── Tourney helpers ───────────────────────────────────────────────────────────
+
+function ordinal(n) {
+  if (n === 1) return '1st';
+  if (n === 2) return '2nd';
+  if (n === 3) return '3rd';
+  return `${n}th`;
+}
+
+const EMPTY_MATCH = () => ({ opponent: '', phase: 'pool', result: 'W', sets: [{ our: '', their: '' }] });
+const EMPTY_TOURNEY = { name: '', year: '', seed: '', placing: '', matches: [EMPTY_MATCH()] };
+
+function TourneyEntryModal({ teamId, onClose, entryId, initialData }) {
+  const [form, setForm] = useState(() => initialData ?? { ...EMPTY_TOURNEY, matches: [EMPTY_MATCH()] });
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState('');
+
+  function setField(field, val) { setForm(f => ({ ...f, [field]: val })); setError(''); }
+
+  function setMatch(i, field, val) {
+    setForm(f => {
+      const matches = f.matches.map((m, idx) => idx === i ? { ...m, [field]: val } : m);
+      return { ...f, matches };
+    });
+  }
+
+  function setSet(mi, si, field, val) {
+    setForm(f => {
+      const matches = f.matches.map((m, idx) => {
+        if (idx !== mi) return m;
+        const sets = m.sets.map((s, sidx) => sidx === si ? { ...s, [field]: val } : s);
+        return { ...m, sets };
+      });
+      return { ...f, matches };
+    });
+  }
+
+  function addSet(mi) {
+    setForm(f => {
+      const matches = f.matches.map((m, idx) =>
+        idx === mi ? { ...m, sets: [...m.sets, { our: '', their: '' }] } : m
+      );
+      return { ...f, matches };
+    });
+  }
+
+  function removeSet(mi, si) {
+    setForm(f => {
+      const matches = f.matches.map((m, idx) =>
+        idx === mi ? { ...m, sets: m.sets.filter((_, sidx) => sidx !== si) } : m
+      );
+      return { ...f, matches };
+    });
+  }
+
+  function addMatch() { setForm(f => ({ ...f, matches: [...f.matches, EMPTY_MATCH()] })); }
+
+  function removeMatch(i) {
+    setForm(f => ({ ...f, matches: f.matches.filter((_, idx) => idx !== i) }));
+  }
+
+  async function handleSave() {
+    if (!form.name.trim())       { setError('Tournament name is required.'); return; }
+    if (!form.year)               { setError('Year is required.'); return; }
+    if (!form.placing)            { setError('Placing is required.'); return; }
+    for (const m of form.matches) {
+      if (!m.opponent.trim())     { setError('All matches need an opponent.'); return; }
+      for (const s of m.sets) {
+        if (s.our === '' || s.their === '') { setError('All set scores must be filled in.'); return; }
+      }
+    }
+    setSaving(true);
+    const doc = {
+      team_id: teamId,
+      name:    form.name.trim(),
+      year:    Number(form.year),
+      seed:    form.seed ? Number(form.seed) : null,
+      placing: Number(form.placing),
+      matches: form.matches.map(m => ({
+        opponent: m.opponent.trim(),
+        phase:    m.phase,
+        result:   m.result,
+        sets:     m.sets.map(s => ({ our: Number(s.our), their: Number(s.their) })),
+      })),
+    };
+    try {
+      if (entryId) { await db.tourney_entries.update(entryId, doc); }
+      else         { await db.tourney_entries.add(doc); }
+      onClose();
+    } catch { setError('Failed to save. Please try again.'); }
+    finally { setSaving(false); }
+  }
+
+  const inputCls = 'w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary';
+  const labelCls = 'block text-xs font-semibold text-slate-400 mb-1';
+  const toggleBase = 'px-2.5 py-1 rounded text-xs font-bold transition-colors';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onClick={onClose}>
+      <div
+        className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-t-2xl sm:rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-bold text-slate-100">{entryId ? 'Edit Tournament' : 'Add Tournament'}</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">✕</button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className={labelCls}>Tournament Name</label>
+            <input className={inputCls} placeholder="e.g. Southside Classic" value={form.name} onChange={e => setField('name', e.target.value)} />
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className={labelCls}>Year</label>
+              <input className={inputCls} type="number" placeholder="2024" min="1900" max="2100" value={form.year} onChange={e => setField('year', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Seed</label>
+              <input className={inputCls} type="number" placeholder="—" min="1" value={form.seed} onChange={e => setField('seed', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls}>Placing {form.placing ? `(${ordinal(Number(form.placing))})` : ''}</label>
+              <input className={inputCls} type="number" placeholder="1" min="1" value={form.placing} onChange={e => setField('placing', e.target.value)} />
+            </div>
+          </div>
+
+          <div className="border-t border-slate-700 pt-3 space-y-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Matches</p>
+            {form.matches.map((m, mi) => (
+              <div key={mi} className="bg-slate-800 rounded-xl p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-primary"
+                    placeholder="Opponent"
+                    value={m.opponent}
+                    onChange={e => setMatch(mi, 'opponent', e.target.value)}
+                  />
+                  {form.matches.length > 1 && (
+                    <button onClick={() => removeMatch(mi)} className="text-slate-500 hover:text-red-400 text-lg leading-none shrink-0">✕</button>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="flex rounded-lg overflow-hidden border border-slate-600">
+                    {['pool', 'playoffs'].map(p => (
+                      <button key={p} onClick={() => setMatch(mi, 'phase', p)}
+                        className={`${toggleBase} ${m.phase === p ? 'bg-primary text-white' : 'bg-slate-700 text-slate-400'}`}>
+                        {p === 'pool' ? 'Pool' : 'Playoffs'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex rounded-lg overflow-hidden border border-slate-600">
+                    {['W', 'L'].map(r => (
+                      <button key={r} onClick={() => setMatch(mi, 'result', r)}
+                        className={`${toggleBase} ${m.result === r ? (r === 'W' ? 'bg-emerald-700 text-white' : 'bg-red-700 text-white') : 'bg-slate-700 text-slate-400'}`}>
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  {m.sets.map((s, si) => (
+                    <div key={si} className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500 w-10 shrink-0">Set {si + 1}</span>
+                      <input type="number" min="0" max="99" placeholder="Us"
+                        className="w-14 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100 text-center focus:outline-none focus:border-primary"
+                        value={s.our} onChange={e => setSet(mi, si, 'our', e.target.value)} />
+                      <span className="text-slate-500 text-xs">–</span>
+                      <input type="number" min="0" max="99" placeholder="Them"
+                        className="w-14 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-slate-100 text-center focus:outline-none focus:border-primary"
+                        value={s.their} onChange={e => setSet(mi, si, 'their', e.target.value)} />
+                      {m.sets.length > 1 && (
+                        <button onClick={() => removeSet(mi, si)} className="text-slate-600 hover:text-red-400 text-sm leading-none">✕</button>
+                      )}
+                    </div>
+                  ))}
+                  <button onClick={() => addSet(mi)} className="text-xs text-primary hover:brightness-110 font-semibold">+ Add Set</button>
+                </div>
+              </div>
+            ))}
+            <button onClick={addMatch} className="w-full py-2 rounded-xl border border-dashed border-slate-600 text-xs text-slate-400 hover:text-slate-200 hover:border-slate-400 transition-colors">
+              + Add Match
+            </button>
+          </div>
+        </div>
+
+        {error && <p className="text-xs text-red-400">{error}</p>}
+
+        <button onClick={handleSave} disabled={saving}
+          className="w-full py-2.5 rounded-xl bg-primary text-white text-sm font-bold active:scale-95 disabled:opacity-50">
+          {saving ? 'Saving…' : entryId ? 'Save Changes' : 'Save Tournament'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TourneyEntryCard({ entry, onEdit, onDelete }) {
+  const [swiped, setSwiped] = useState(false);
+  const startX = useRef(0);
+
+  const placingLabel = ordinal(entry.placing);
+  const isChamp = entry.placing === 1;
+
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-slate-700/50">
+      <div className="absolute inset-y-0 right-0 flex">
+        <button onClick={() => { setSwiped(false); onEdit(entry); }}
+          className="w-16 flex items-center justify-center bg-blue-600 text-white text-xs font-bold">Edit</button>
+        <button onClick={() => { setSwiped(false); onDelete(entry.id); }}
+          className="w-16 flex items-center justify-center bg-red-600 text-white text-xs font-bold">Delete</button>
+      </div>
+      <div
+        className={`bg-slate-800 p-3 space-y-2 transition-transform duration-200 ${swiped ? '-translate-x-32' : 'translate-x-0'}`}
+        onTouchStart={e => { startX.current = e.touches[0].clientX; }}
+        onTouchEnd={e => {
+          const delta = e.changedTouches[0].clientX - startX.current;
+          if (delta < -40) setSwiped(true);
+          else if (delta > 20) setSwiped(false);
+        }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm font-bold text-white truncate">{entry.name}</span>
+            <span className="text-xs text-slate-500 shrink-0">{entry.year}</span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {entry.seed != null && (
+              <span className="text-xs bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-semibold">#{entry.seed} seed</span>
+            )}
+            <span className={`text-xs px-2 py-0.5 rounded font-bold border ${
+              isChamp
+                ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
+                : entry.placing <= 3
+                ? 'bg-slate-600/40 text-slate-200 border-slate-500/40'
+                : 'bg-slate-700/40 text-slate-400 border-slate-600/40'
+            }`}>
+              {placingLabel}{isChamp ? ' 🏆' : ''}
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          {entry.matches.map((m, i) => {
+            const setStr = m.sets.map(s => `${s.our}–${s.their}`).join(', ');
+            return (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className={`w-5 text-center font-bold rounded px-0.5 ${m.result === 'W' ? 'text-emerald-400' : 'text-red-400'}`}>{m.result}</span>
+                <span className={`px-1.5 py-px rounded text-[10px] font-bold uppercase tracking-wide ${
+                  m.phase === 'pool' ? 'bg-blue-900/50 text-blue-300' : 'bg-purple-900/50 text-purple-300'
+                }`}>{m.phase === 'pool' ? 'Pool' : 'Playoffs'}</span>
+                <span className="text-slate-300 truncate">{m.opponent}</span>
+                <span className="text-slate-500 shrink-0 ml-auto">{setStr}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── page ─────────────────────────────────────────────────────────────────────
 
 export function RecordsPage() {
@@ -496,9 +763,10 @@ export function RecordsPage() {
   const [statKey, setStatKey] = useState('k');
   const [boards,     setBoards]     = useState(null);
   const [loading,    setLoading]    = useState(false);
-  const [showAdd,    setShowAdd]    = useState(false);
-  const [editRow,    setEditRow]    = useState(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [showAdd,      setShowAdd]      = useState(false);
+  const [editRow,      setEditRow]      = useState(null);
+  const [editTourney,  setEditTourney]  = useState(null);
+  const [refreshKey,   setRefreshKey]   = useState(0);
 
   const orgs = useLiveQuery(
     () => db.organizations.toArray().then(o => o.sort((a, b) => a.name?.localeCompare(b.name))),
@@ -516,6 +784,13 @@ export function RecordsPage() {
     () => teamId
       ? db.season_history.where('team_id').equals(teamId).toArray()
           .then(rows => rows.sort((a, b) => String(b.year).localeCompare(String(a.year))))
+      : Promise.resolve([]),
+    [teamId]
+  );
+  const tourneyEntries = useLiveQuery(
+    () => teamId
+      ? db.tourney_entries.where('team_id').equals(teamId).toArray()
+          .then(rows => rows.sort((a, b) => b.year - a.year))
       : Promise.resolve([]),
     [teamId]
   );
@@ -556,7 +831,7 @@ export function RecordsPage() {
   }, [teamId]);
 
   useEffect(() => {
-    if (!teamId) return;
+    if (!teamId || tab === 'tourney') return;
     setLoading(true);
     setBoards(null);
     computeLeaderboards(tab, teamId, getIntStorage(STORAGE_KEYS.DEFAULT_SEASON_ID))
@@ -660,40 +935,59 @@ export function RecordsPage() {
                   ))}
                 </div>
 
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {RECORD_STATS.map(s => (
-                    <button
-                      key={s.key}
-                      onClick={() => setStatKey(s.key)}
-                      className={`shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors ${
-                        statKey === s.key ? 'bg-primary text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-
-                {loading ? (
-                  <div className="flex justify-center py-10"><Spinner /></div>
-                ) : rows.length === 0 ? (
-                  <EmptyState icon="📋" title="No records yet" description="Add historical records or complete matches to build the leaderboard" />
+                {tab === 'tourney' ? (
+                  tourneyEntries?.length === 0 ? (
+                    <EmptyState icon="🏆" title="No tournaments yet" description="Tap + Add to log your first tournament" />
+                  ) : (
+                    <div className="space-y-2">
+                      {tourneyEntries?.map(entry => (
+                        <TourneyEntryCard
+                          key={entry.id}
+                          entry={entry}
+                          onEdit={e => setEditTourney(e)}
+                          onDelete={async id => { await db.tourney_entries.delete(id); }}
+                        />
+                      ))}
+                    </div>
+                  )
                 ) : (
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">
-                      Top {rows.length} — {statDef?.label} · {tabDef?.label}
-                    </p>
-                    {rows.map(row => (
-                      <LeaderboardRow
-                        key={row.rank}
-                        row={row}
-                        tab={tab}
-                        fmt={statDef?.fmt ?? fmtCount}
-                        onEdit={setEditRow}
-                        onDelete={handleDelete}
-                      />
-                    ))}
-                  </div>
+                  <>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                      {RECORD_STATS.map(s => (
+                        <button
+                          key={s.key}
+                          onClick={() => setStatKey(s.key)}
+                          className={`shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors ${
+                            statKey === s.key ? 'bg-primary text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {loading ? (
+                      <div className="flex justify-center py-10"><Spinner /></div>
+                    ) : rows.length === 0 ? (
+                      <EmptyState icon="📋" title="No records yet" description="Add historical records or complete matches to build the leaderboard" />
+                    ) : (
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-3">
+                          Top {rows.length} — {statDef?.label} · {tabDef?.label}
+                        </p>
+                        {rows.map(row => (
+                          <LeaderboardRow
+                            key={row.rank}
+                            row={row}
+                            tab={tab}
+                            fmt={statDef?.fmt ?? fmtCount}
+                            onEdit={setEditRow}
+                            onDelete={handleDelete}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </>
             )}
@@ -701,8 +995,28 @@ export function RecordsPage() {
         )}
       </div>
 
-      {showAdd && teamId && (
+      {showAdd && teamId && tab !== 'tourney' && (
         <AddRecordModal teamId={teamId} tab={tab} statKey={statKey} onClose={() => setShowAdd(false)} />
+      )}
+      {showAdd && teamId && tab === 'tourney' && (
+        <TourneyEntryModal teamId={teamId} onClose={() => setShowAdd(false)} />
+      )}
+      {editTourney && teamId && (
+        <TourneyEntryModal
+          teamId={teamId}
+          entryId={editTourney.id}
+          initialData={{
+            name:    editTourney.name,
+            year:    String(editTourney.year),
+            seed:    editTourney.seed != null ? String(editTourney.seed) : '',
+            placing: String(editTourney.placing),
+            matches: editTourney.matches.map(m => ({
+              ...m,
+              sets: m.sets.map(s => ({ our: String(s.our), their: String(s.their) })),
+            })),
+          }}
+          onClose={() => setEditTourney(null)}
+        />
       )}
 
       {editRow && teamId && (
