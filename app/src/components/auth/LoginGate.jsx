@@ -7,9 +7,12 @@ function isAuthed() {
 }
 
 function checkCredentials(user, pass) {
+  const envUser = import.meta.env.VITE_APP_USER;
+  const envPass = import.meta.env.VITE_APP_PASS;
+  if (!envUser || !envPass) return false;
   return (
-    user.trim().toLowerCase() === import.meta.env.VITE_APP_USER.toLowerCase() &&
-    pass.trim().toLowerCase() === import.meta.env.VITE_APP_PASS.toLowerCase()
+    user.trim().toLowerCase() === envUser.toLowerCase() &&
+    pass.trim().toLowerCase() === envPass.toLowerCase()
   );
 }
 
