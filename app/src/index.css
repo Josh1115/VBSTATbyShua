@@ -269,6 +269,56 @@
   animation: book-open 3.4s ease-in-out infinite;
 }
 
+@keyframes pen-scribble {
+  0%   { stroke-dashoffset: var(--len); opacity: 0; }
+  8%   { opacity: 1; }
+  55%  { stroke-dashoffset: 0; opacity: 1; }
+  85%  { stroke-dashoffset: 0; opacity: 0.5; }
+  100% { stroke-dashoffset: var(--len); opacity: 0; }
+}
+.scribble-line {
+  stroke: var(--sc, currentColor);
+  stroke-dasharray: var(--len, 7);
+  stroke-dashoffset: var(--len, 7);
+  animation: pen-scribble 2s ease-out var(--delay, 0ms) infinite;
+}
+
+@keyframes score-flip {
+  0%   { opacity: 0.05; }
+  12%  { opacity: 1; }
+  58%  { opacity: 1; }
+  78%  { opacity: 0.05; }
+  100% { opacity: 0.05; }
+}
+.score-digit {
+  fill: var(--dc, currentColor);
+  animation: score-flip 2.2s ease-in-out var(--delay, 0ms) infinite;
+}
+
+@keyframes jersey-fade {
+  0%   { opacity: 0; }
+  18%  { opacity: 1; }
+  72%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+.jersey-num {
+  animation: jersey-fade 0.9s ease-in-out;
+}
+
+@keyframes spark-pop {
+  0%   { opacity: 0;   transform: scale(0.2); }
+  15%  { opacity: 1;   transform: scale(1.3); }
+  40%  { opacity: 0.8; transform: scale(1);   }
+  55%  { opacity: 0;   transform: scale(0.2); }
+  100% { opacity: 0;   transform: scale(0.2); }
+}
+.gear-spark {
+  fill: var(--sc, #ffffff);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: spark-pop 2s ease-in-out var(--delay, 0ms) infinite;
+}
+
 @keyframes confetti-fall {
   0%   { transform: translateX(0) translateY(-6px) rotate(0deg); opacity: 1; }
   80%  { opacity: 0.6; }

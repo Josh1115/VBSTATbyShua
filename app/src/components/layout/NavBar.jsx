@@ -1,8 +1,17 @@
-import { memo } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 
-function HomeScoreboardIcon() {
+const SCORE_DIGITS = [
+  // Left score — white, ticks first
+  { x: 4,    y: 11, w: 3.5, h: 5, delay: 0,   color: '#ffffff' },
+  { x: 8,    y: 11, w: 2,   h: 5, delay: 60,  color: '#ffffff' },
+  // Right score — blue, ticks second
+  { x: 13.5, y: 11, w: 2,   h: 5, delay: 700, color: '#60a5fa' },
+  { x: 16.5, y: 11, w: 3.5, h: 5, delay: 760, color: '#60a5fa' },
+];
+
+function HomeScoreboardIcon({ active }) {
   return (
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ color: '#f97316' }}>
       {/* Board body */}
@@ -15,17 +24,38 @@ function HomeScoreboardIcon() {
         stroke="none" />
       {/* Center divider */}
       <line x1="12" y1="8" x2="12" y2="20" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      {/* Left score */}
-      <rect x="4" y="11" width="3.5" height="5" rx="0.5" fill="currentColor" fillOpacity="0.7" />
-      <rect x="8" y="11" width="2" height="5" rx="0.5" fill="currentColor" fillOpacity="0.7" />
-      {/* Right score */}
-      <rect x="13.5" y="11" width="2" height="5" rx="0.5" fill="currentColor" fillOpacity="0.7" />
-      <rect x="16.5" y="11" width="3.5" height="5" rx="0.5" fill="currentColor" fillOpacity="0.7" />
+      {active ? (
+        SCORE_DIGITS.map((d, i) => (
+          <rect key={i} x={d.x} y={d.y} width={d.w} height={d.h} rx="0.5"
+            className="score-digit"
+            style={{ '--dc': d.color, '--delay': `${d.delay}ms` }} />
+        ))
+      ) : (
+        <>
+          <rect x="4"    y="11" width="3.5" height="5" rx="0.5" fill="currentColor" fillOpacity="0.7" />
+          <rect x="8"    y="11" width="2"   height="5" rx="0.5" fill="currentColor" fillOpacity="0.7" />
+          <rect x="13.5" y="11" width="2"   height="5" rx="0.5" fill="currentColor" fillOpacity="0.7" />
+          <rect x="16.5" y="11" width="3.5" height="5" rx="0.5" fill="currentColor" fillOpacity="0.7" />
+        </>
+      )}
     </svg>
   );
 }
 
-function TeamsIcon() {
+const JERSEY_NUMBERS = [11, 7, 3, 4, 15, 8, 10];
+
+function TeamsIcon({ active }) {
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    if (!active) { setIdx(0); return; }
+    const id = setInterval(() => setIdx(i => (i + 1) % JERSEY_NUMBERS.length), 900);
+    return () => clearInterval(id);
+  }, [active]);
+
+  const leftNum  = JERSEY_NUMBERS[idx];
+  const rightNum = JERSEY_NUMBERS[(idx + 3) % JERSEY_NUMBERS.length];
+
   return (
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ color: '#f97316' }}>
       {/* Left person — head */}
@@ -46,6 +76,22 @@ function TeamsIcon() {
         fill="currentColor" fillOpacity="0.2"
         stroke="currentColor" strokeWidth="1.4"
         strokeLinecap="round" strokeLinejoin="round" />
+      {active && (
+        <>
+          <text key={`L${idx}`} x="7.5" y="17.5"
+            className="jersey-num"
+            fontSize="3.8" fontWeight="bold" textAnchor="middle" dominantBaseline="central"
+            fill="#ffffff">
+            {leftNum}
+          </text>
+          <text key={`R${idx}`} x="16.5" y="17.5"
+            className="jersey-num"
+            fontSize="3.8" fontWeight="bold" textAnchor="middle" dominantBaseline="central"
+            fill="#60a5fa">
+            {rightNum}
+          </text>
+        </>
+      )}
     </svg>
   );
 }
@@ -126,7 +172,16 @@ function ConfettiTrophy({ active }) {
   );
 }
 
-function HistoryBookIcon() {
+const SCRIBBLE_LINES = [
+  { x1: 4.5,  y1: 9.5,  x2: 10.5, y2: 10,   len: 6.1, delay: 0,   color: '#ffffff' },
+  { x1: 13.5, y1: 10,   x2: 19.5, y2: 9.5,  len: 6.1, delay: 110, color: '#60a5fa' },
+  { x1: 4.5,  y1: 12.5, x2: 10.5, y2: 13,   len: 6.1, delay: 220, color: '#ffffff' },
+  { x1: 13.5, y1: 13,   x2: 19.5, y2: 12.5, len: 6.1, delay: 330, color: '#60a5fa' },
+  { x1: 4.5,  y1: 15.5, x2: 9,    y2: 15.8, len: 4.5, delay: 440, color: '#ffffff' },
+  { x1: 13.5, y1: 15.8, x2: 18,   y2: 15.5, len: 4.5, delay: 550, color: '#60a5fa' },
+];
+
+function HistoryBookIcon({ active }) {
   return (
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ color: '#f97316' }}>
       {/* Left page */}
@@ -140,19 +195,34 @@ function HistoryBookIcon() {
       {/* Spine */}
       <line x1="12" y1="6" x2="12" y2="18"
         stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      {/* Left page lines */}
-      <line x1="4.5" y1="9.5"  x2="10.5" y2="10"  stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-      <line x1="4.5" y1="12.5" x2="10.5" y2="13"  stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-      <line x1="4.5" y1="15.5" x2="9"    y2="15.8" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-      {/* Right page lines */}
-      <line x1="13.5" y1="10"   x2="19.5" y2="9.5"  stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-      <line x1="13.5" y1="13"   x2="19.5" y2="12.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-      <line x1="13.5" y1="15.8" x2="18"   y2="15.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+      {/* Page lines — animated when active */}
+      {SCRIBBLE_LINES.map((l, i) =>
+        active ? (
+          <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+            className="scribble-line"
+            style={{ '--len': l.len, '--delay': `${l.delay}ms`, '--sc': l.color }}
+            stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+        ) : (
+          <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+            stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+        )
+      )}
     </svg>
   );
 }
 
-function ClipboardIcon() {
+const PLAY_ELEMENTS = [
+  // Player circles (bottom of clipboard)
+  { type: 'circle', cx: 7,  cy: 18.5, r: 1.5, len: 9.4,  delay: 0,   color: '#ffffff' },
+  { type: 'circle', cx: 12, cy: 18.5, r: 1.5, len: 9.4,  delay: 100, color: '#60a5fa' },
+  { type: 'circle', cx: 17, cy: 18.5, r: 1.5, len: 9.4,  delay: 200, color: '#ffffff' },
+  // Routes — each player cuts toward the middle/top
+  { type: 'line', x1: 7,  y1: 16.9, x2: 9.5,  y2: 10.5, len: 7.0, delay: 420, color: '#60a5fa' },
+  { type: 'line', x1: 12, y1: 16.9, x2: 12,   y2: 9.5,  len: 7.4, delay: 540, color: '#ffffff' },
+  { type: 'line', x1: 17, y1: 16.9, x2: 14.5, y2: 10.5, len: 7.0, delay: 660, color: '#60a5fa' },
+];
+
+function ClipboardIcon({ active }) {
   return (
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ color: '#f97316' }}>
       {/* Clipboard body */}
@@ -163,15 +233,43 @@ function ClipboardIcon() {
       <rect x="8.5" y="2" width="7" height="4" rx="1"
         fill="currentColor" fillOpacity="0.3"
         stroke="currentColor" strokeWidth="1.3" />
-      {/* Lines representing content */}
-      <line x1="7.5" y1="10" x2="16.5" y2="10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <line x1="7.5" y1="13.5" x2="16.5" y2="13.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <line x1="7.5" y1="17" x2="13" y2="17" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      {active ? (
+        PLAY_ELEMENTS.map((el, i) =>
+          el.type === 'circle' ? (
+            <circle key={i} cx={el.cx} cy={el.cy} r={el.r}
+              className="scribble-line"
+              style={{ '--len': el.len, '--delay': `${el.delay}ms`, '--sc': el.color }}
+              fill="none" stroke="currentColor" strokeWidth="1.2" />
+          ) : (
+            <line key={i} x1={el.x1} y1={el.y1} x2={el.x2} y2={el.y2}
+              className="scribble-line"
+              style={{ '--len': el.len, '--delay': `${el.delay}ms`, '--sc': el.color }}
+              stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          )
+        )
+      ) : (
+        <>
+          <line x1="7.5" y1="10"   x2="16.5" y2="10"   stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          <line x1="7.5" y1="13.5" x2="16.5" y2="13.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+          <line x1="7.5" y1="17"   x2="13"   y2="17"   stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+        </>
+      )}
     </svg>
   );
 }
 
-function SettingsGearIcon() {
+const GEAR_SPARKS = [
+  { cx: 12,   cy: 2.6,  color: '#ffffff', delay: 0    },
+  { cx: 18.7, cy: 5.35, color: '#60a5fa', delay: 250  },
+  { cx: 21.4, cy: 12,   color: '#ffffff', delay: 500  },
+  { cx: 18.7, cy: 18.7, color: '#60a5fa', delay: 750  },
+  { cx: 12,   cy: 21.4, color: '#ffffff', delay: 1000 },
+  { cx: 5.35, cy: 18.7, color: '#60a5fa', delay: 1250 },
+  { cx: 2.6,  cy: 12,   color: '#ffffff', delay: 1500 },
+  { cx: 5.35, cy: 5.35, color: '#60a5fa', delay: 1750 },
+];
+
+function SettingsGearIcon({ active }) {
   return (
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ color: '#f97316' }}>
       <path
@@ -183,13 +281,23 @@ function SettingsGearIcon() {
         strokeLinejoin="round"
         d="M10.0,4.8 L10.8,2.6 L13.2,2.6 L14.0,4.8 L15.7,5.5 L17.9,4.5 L19.5,6.2 L18.5,8.3 L19.2,10.0 L21.4,10.8 L21.4,13.2 L19.2,14.0 L18.5,15.7 L19.5,17.9 L17.9,19.5 L15.7,18.5 L14.0,19.2 L13.2,21.4 L10.8,21.4 L10.0,19.2 L8.3,18.5 L6.2,19.5 L4.5,17.9 L5.5,15.7 L4.8,14.0 L2.6,13.2 L2.6,10.8 L4.8,10.0 L5.5,8.3 L4.5,6.2 L6.2,4.5 L8.3,5.5 Z M12,8.5 A3.5,3.5 0 1 1 12,15.5 A3.5,3.5 0 1 1 12,8.5 Z"
       />
+      {active && (
+        <>
+          {/* Sparks at each tooth tip, alternating white/blue */}
+          {GEAR_SPARKS.map((s, i) => (
+            <circle key={i} cx={s.cx} cy={s.cy} r="1.1"
+              className="gear-spark"
+              style={{ '--delay': `${s.delay}ms`, '--sc': s.color }} />
+          ))}
+        </>
+      )}
     </svg>
   );
 }
 
 const TABS = [
   { to: '/',         label: 'Home',    svg: HomeScoreboardIcon, end: true,  idleAnim: 'animate-home-pulse'      },
-  { to: '/teams',    label: 'Teams',   svg: TeamsIcon, end: false, idleAnim: 'animate-teams-wobble'    },
+  { to: '/teams',    label: 'Teams',   svg: TeamsIcon, end: false, idleAnim: ''                        },
   { to: '/records',  label: 'Records', svg: ConfettiTrophy, end: false, idleAnim: 'animate-trophy-twinkle' },
   { to: '/reports',  label: 'Reports', svg: ClipboardIcon, end: false, idleAnim: 'animate-chart-float' },
   { to: '/history',  label: 'History', svg: HistoryBookIcon, end: false, idleAnim: 'animate-book-open'  },
@@ -198,7 +306,7 @@ const TABS = [
 
 const tabClass = (isActive) =>
   clsx('flex-1 flex flex-col items-center gap-1 py-2 text-xs transition-colors',
-    isActive ? 'text-primary' : 'text-slate-400');
+    isActive ? 'text-primary' : 'text-white');
 
 export const NavBar = memo(function NavBar() {
   const { pathname } = useLocation();
@@ -239,7 +347,7 @@ export const NavBar = memo(function NavBar() {
                   >
                     <SvgIcon active={isActive} />
                   </span>
-                  <span className="text-xs uppercase leading-none">{tab.label}</span>
+                  <span className="text-xs font-bold uppercase leading-none">{tab.label}</span>
                 </>
               )}
             </NavLink>
