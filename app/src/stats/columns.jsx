@@ -18,8 +18,8 @@ function bpColor(v, row) {
 }
 
 const SP_MP_COLS = [
-  { key: 'sp', label: 'SP', fmt: fmtCount },
   { key: 'mp', label: 'MP', fmt: fmtCount },
+  { key: 'sp', label: 'SP', fmt: fmtCount },
 ];
 
 export const SERVING_COLS = {
@@ -65,20 +65,25 @@ export const TAB_COLUMNS = {
   serving: SERVING_COLS.all,
   passing: [
     { key: 'name',    label: 'Player' },
-    ...SP_MP_COLS,
+    { key: 'mp',      label: 'MP',    fmt: fmtCount     },
+    { key: 'sp',      label: 'SP',    fmt: fmtCount     },
     { key: 'pa',      label: 'REC',   fmt: fmtCount     },
+    { key: 'apr',     label: 'APR',   fmt: fmtPassRating },
+    { key: 'pp_pct',  label: '3OPT%', fmt: fmtPct       },
     { key: 'p0',      label: 'P0',    fmt: fmtCount     },
     { key: 'p1',      label: 'P1',    fmt: fmtCount     },
     { key: 'p2',      label: 'P2',    fmt: fmtCount     },
     { key: 'p3',      label: 'P3',    fmt: fmtCount     },
-    { key: 'apr',     label: 'APR',   fmt: fmtPassRating },
-    { key: 'pp_pct',  label: '3OPT%', fmt: fmtPct       },
   ],
   attacking: [
     { key: 'name',      label: 'Player' },
     ...SP_MP_COLS,
-    { key: 'ta',        label: 'TA',    fmt: fmtCount   },
-    { key: 'k',          label: 'K',       fmt: fmtCount   },
+    { key: 'ta',        label: 'ATT',   fmt: fmtCount   },
+    { key: 'k',         label: 'K',     fmt: fmtCount   },
+    { key: 'ae',        label: 'AE',    fmt: fmtCount   },
+    { key: 'kps',       label: 'KPS',   fmt: fmtRate    },
+    { key: 'k_pct',     label: 'K%',    fmt: fmtPct     },
+    { key: 'hit_pct',   label: 'HIT%',  fmt: fmtHitting },
     { key: 'k_pure',     label: 'PURE',    fmt: fmtCount   },
     { key: 'k_pure_pct', label: 'PURE%',   fmt: fmtPct     },
     { key: 'k_tool',     label: 'TOOL',    fmt: fmtCount   },
@@ -89,15 +94,11 @@ export const TAB_COLUMNS = {
     { key: 'k_tip_pct',  label: 'TIP%',    fmt: fmtPct     },
     { key: 'k_bk',       label: 'BK',      fmt: fmtCount   },
     { key: 'k_bk_pct',   label: 'BK%',     fmt: fmtPct     },
-    { key: 'ae',        label: 'AE',    fmt: fmtCount   },
     { key: 'ae_ob',     label: 'OB',    fmt: fmtCount   },
     { key: 'ae_net',    label: 'NET',   fmt: fmtCount   },
     { key: 'ae_blk',    label: 'BLK',   fmt: fmtCount   },
     { key: 'ae_bra',    label: 'BRA',   fmt: fmtCount   },
     { key: 'fbs',       label: 'FBS',   fmt: fmtCount   },
-    { key: 'hit_pct',   label: 'HIT%',  fmt: fmtHitting },
-    { key: 'k_pct',     label: 'K%',    fmt: fmtPct     },
-    { key: 'kps',       label: 'KPS',   fmt: fmtRate },
   ],
   ver: [
     { key: 'name',      label: 'Player' },

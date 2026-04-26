@@ -45,7 +45,7 @@ export const STAT_GLOSSARY = {
   pp_pct:       { abbr: '3OPT%',   full: 'Perfect Pass %',             def: 'P3 ÷ REC. Rate of passes rated "perfect".' },
 
   // ── Attacking ─────────────────────────────────────────────────────────────
-  ta:           { abbr: 'TA',       full: 'Total Attacks',              def: 'Total attack attempts (kills + errors + in-play attempts).' },
+  ta:           { abbr: 'ATT',      full: 'Total Attacks',              def: 'Total attack attempts (kills + errors + in-play attempts).' },
   k:            { abbr: 'K',        full: 'Kills',                      def: 'Attacks that score a point directly.' },
   ae:           { abbr: 'AE',       full: 'Attack Errors',              def: 'Attacks that result in a point for the opponent (out, blocked).' },
   hit_pct:      { abbr: 'HIT%',     full: 'Hitting Percentage',         def: '(K − AE) ÷ TA. Ranges −1.000 to 1.000. The primary attacking efficiency stat.' },

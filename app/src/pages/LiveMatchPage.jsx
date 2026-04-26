@@ -147,7 +147,7 @@ export function LiveMatchPage() {
     [allMatchContacts, setNumber]
   );
 
-  const { activeAlerts, pendingAlerts, markPendingShown } = useRecordAlerts(records ?? [], matchPlayerStats, matchTeamStats);
+  const { activeAlerts } = useRecordAlerts(records ?? [], matchPlayerStats, matchTeamStats);
 
   // Keep screen awake during live match if setting is on
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -166,20 +166,6 @@ export function LiveMatchPage() {
     }
   }, [ourScore, oppScore]);
 
-  // Auto-open LiveStatsModal on RECORDS tab when new milestone is crossed between points
-  const pointCount = pointHistory.length;
-  useEffect(() => {
-    if (pointCount > 0 && pendingAlerts.length > 0) {
-      markPendingShown();
-      const ICONS = { beat: '🏆', tie: '⚡', one_away: '🔥', pct90: '▲', pct80: '▲' };
-      pendingAlerts.forEach((a) =>
-        showToast(`${ICONS[a.milestone] ?? ''} ${a.playerName} · ${a.statLabel}: ${a.currentValue}`, 'info')
-      );
-      setStatsOpen(true);
-      setLiveStatsDefaultTab('RECORDS');
-    }
-  // intentionally only re-runs when a new point is scored; stable refs excluded from deps
-  }, [pointCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTimeoutClose = useCallback(() => {
     const { ourScore, oppScore } = useMatchStore.getState();
@@ -465,11 +451,6 @@ export function LiveMatchPage() {
           onContinue={async () => {
             const { winner } = setSummaryData;
             setSetSummaryData(null);
-            if (pendingAlerts.length > 0) {
-              markPendingShown();
-              setLiveStatsDefaultTab('RECORDS');
-              setStatsOpen(true);
-            }
             await endSet(winner);
             if (winner === SIDE.US) {
               setConfettiNav({ path: `/matches/${matchIdParam}/set-lineup`, matchWin: false });
@@ -526,11 +507,6 @@ export function LiveMatchPage() {
               } else if (isMatchOver) {
                 await endMatch(pendingSetWin);
                 clearPendingSetWin();
-                if (pendingAlerts.length > 0) {
-                  markPendingShown();
-                  setLiveStatsDefaultTab('RECORDS');
-                  setStatsOpen(true);
-                }
                 if (pendingSetWin === SIDE.US) {
                   setConfettiNav({ path: `/matches/${matchIdParam}/summary`, matchWin: true });
                 } else {

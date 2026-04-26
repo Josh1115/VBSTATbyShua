@@ -168,7 +168,7 @@ export function exportMatchPDF(matchMeta, playerStats, teamStats, rotationStats,
 
   autoTable(doc, {
     startY: 35,
-    head: [['Player', 'SA', 'ACE', 'ACE%', 'REC', 'APR', 'TA', 'K', 'HIT%', 'BS', 'BA', 'DIG']],
+    head: [['Player', 'SA', 'ACE', 'ACE%', 'REC', 'APR', 'ATT', 'K', 'HIT%', 'BS', 'BA', 'DIG']],
     body: rows.map(r => [
       r.name,
       fmtCount(r.sa),
@@ -219,7 +219,7 @@ export function exportMatchPDF(matchMeta, playerStats, teamStats, rotationStats,
     const setRows = playerRows(players, playerNames);
     autoTable(doc, {
       startY: doc.lastAutoTable.finalY + 6,
-      head: [['Player', 'SA', 'ACE', 'ACE%', 'REC', 'APR', 'TA', 'K', 'HIT%', 'BS', 'BA', 'DIG']],
+      head: [['Player', 'SA', 'ACE', 'ACE%', 'REC', 'APR', 'ATT', 'K', 'HIT%', 'BS', 'BA', 'DIG']],
       body: setRows.map((r) => [
         r.name,
         fmtCount(r.sa),

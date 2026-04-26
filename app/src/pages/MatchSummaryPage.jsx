@@ -36,7 +36,6 @@ import { VideoCorrectionsModal } from '../components/match/VideoCorrectionsModal
 import { Modal } from '../components/ui/Modal';
 import { FORMAT } from '../constants';
 import { getStorageItem, STORAGE_KEYS } from '../utils/storage';
-import { useSwipe } from '../hooks/useSwipe';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
   ResponsiveContainer,
@@ -527,9 +526,6 @@ export function MatchSummaryPage() {
   const id = Number(matchId);
 
   const [tab, setTab] = useState('scoring');
-  const onSwipeLeft  = useCallback(() => setTab(t => { const i = TAB_VALUES.indexOf(t); return i < TAB_VALUES.length - 1 ? TAB_VALUES[i + 1] : t; }), []);
-  const onSwipeRight = useCallback(() => setTab(t => { const i = TAB_VALUES.indexOf(t); return i > 0 ? TAB_VALUES[i - 1] : t; }), []);
-  const swipeHandlers = useSwipe({ onSwipeLeft, onSwipeRight });
   const [serveView,     setServeView]     = useState('all');
   const [selectedServingPlayerId, setSelectedServingPlayerId] = useState(null);
   const [trendsView,    setTrendsView]    = useState('trends');
@@ -1145,7 +1141,7 @@ export function MatchSummaryPage() {
           </div>
 
           {/* Tab content */}
-          <div key={tab} className="p-4 md:p-6 animate-fade-in" {...swipeHandlers}>
+          <div key={tab} className="p-4 md:p-6 animate-fade-in">
             {tab === 'scoring' && displayStats && (
               <div className="space-y-6">
                 <SubToggle

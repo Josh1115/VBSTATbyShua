@@ -57,18 +57,18 @@ export const LiberoBox = memo(function LiberoBox({ liberoPlayer, onAssignLibero 
   // Libero is on court — show the benched player (the one sitting out)
   if (liberoOnCourt) {
     return (
-      <div className={`flex items-center gap-1.5 px-2 py-0.5 bg-black/30 rounded border transition-colors ${pulse ? 'border-emerald-400 animate-libero-pulse' : 'border-slate-700'}`}>
+      <div className={`flex items-center gap-3 px-5 py-0.5 bg-black/30 rounded border transition-colors ${pulse ? 'border-emerald-400 animate-libero-pulse' : 'border-slate-700'}`}>
         <div className="flex flex-col leading-none">
           <span className="text-xs text-slate-400 font-bold">
             #{liberoReplacedJersey}
             {liberoReplacedPositionLabel ? ` (${liberoReplacedPositionLabel})` : ''}
           </span>
-          <span className="text-xs text-slate-300 truncate max-w-[9.4vmin]">{lastName(liberoReplacedName)}</span>
+          <span className="text-xs text-slate-300 truncate max-w-[20vmin]">{lastName(liberoReplacedName)}</span>
         </div>
 
         <button
           onPointerDown={(e) => { e.preventDefault(); swapLibero(liberoPlayer); }}
-          className="text-xs font-bold px-2.5 py-1.5 rounded leading-none border transition-colors bg-slate-700 border-slate-500 text-slate-200 hover:bg-slate-600"
+          className="text-[2vmin] font-bold min-w-[20vmin] py-2 rounded leading-none border transition-colors text-center bg-slate-700 border-slate-500 text-slate-200 hover:bg-slate-600"
         >
           SWAP OUT
         </button>

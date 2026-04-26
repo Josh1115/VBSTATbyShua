@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSwipe } from '../hooks/useSwipe';
 import { buildPlayerMaps } from '../utils/players';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { getIntStorage, STORAGE_KEYS } from '../utils/storage';
@@ -48,7 +47,7 @@ const PLAYER_COLS = [
   { key: 'ace_pct', label: 'ACE%',  fmt: fmtPct       },
   { key: 'pa',      label: 'REC',   fmt: fmtCount     },
   { key: 'apr',     label: 'APR',   fmt: fmtPassRating },
-  { key: 'ta',      label: 'TA',    fmt: fmtCount     },
+  { key: 'ta',      label: 'ATT',   fmt: fmtCount     },
   { key: 'k',       label: 'K',     fmt: fmtCount     },
   { key: 'hit_pct', label: 'HIT%',  fmt: fmtHitting   },
   { key: 'bs',      label: 'BS',    fmt: fmtCount     },
@@ -258,9 +257,6 @@ const chipClass = (active) =>
 export function ReportsPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState('team');
-  const onSwipeLeft  = useCallback(() => setTab(t => { const i = TAB_VALUES.indexOf(t); return i < TAB_VALUES.length - 1 ? TAB_VALUES[i + 1] : t; }), []);
-  const onSwipeRight = useCallback(() => setTab(t => { const i = TAB_VALUES.indexOf(t); return i > 0 ? TAB_VALUES[i - 1] : t; }), []);
-  const swipeHandlers = useSwipe({ onSwipeLeft, onSwipeRight });
   const [teamView,              setTeamView]              = useState('totals');
   const [playerStatView,        setPlayerStatView]        = useState('serving');
   const [playerServeView,       setPlayerServeView]       = useState('all');
@@ -669,7 +665,7 @@ export function ReportsPage() {
 
           <TabBar tabs={TABS} active={tab} onChange={setTab} />
 
-          <div className="p-4 md:p-6 space-y-6" {...swipeHandlers}>
+          <div className="p-4 md:p-6 space-y-6">
 
             {/* ── Team Stats ──────────────────────────────────────────── */}
             {tab === 'team' && (

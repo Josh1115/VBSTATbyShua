@@ -45,7 +45,7 @@ export function StatTable({ columns, rows, totalsRow, onRowClick, onNameClick, s
         <StatGlossaryDrawer columns={columns} onClose={() => setGlossaryOpen(false)} />
       )}
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="text-sm">
         <thead>
           <tr className="border-b border-slate-700">
             {columns.map((col) => (
@@ -53,8 +53,8 @@ export function StatTable({ columns, rows, totalsRow, onRowClick, onNameClick, s
                 key={col.key}
                 onClick={() => handleSort(col.key)}
                 className={clsx(
-                  'px-2 py-2 text-right font-semibold cursor-pointer select-none whitespace-nowrap',
-                  col.key === 'name' && 'text-left',
+                  'px-8 py-2 text-center font-semibold cursor-pointer select-none whitespace-nowrap',
+                  col.key === 'name' ? 'text-left sticky left-0 z-10 bg-slate-900' : '',
                   sortKey === col.key ? 'text-primary' : 'text-slate-400'
                 )}
               >
@@ -84,8 +84,8 @@ export function StatTable({ columns, rows, totalsRow, onRowClick, onNameClick, s
                   key={col.key}
                   onClick={col.key === 'name' && onNameClick ? (e) => { e.stopPropagation(); onNameClick(row); } : undefined}
                   className={clsx(
-                    'px-2 py-2 tabular-nums',
-                    col.key === 'name' ? 'text-left font-medium' : 'text-right text-slate-300',
+                    'px-8 py-2 tabular-nums',
+                    col.key === 'name' ? 'text-left font-medium sticky left-0 z-10 bg-slate-900' : 'text-center text-slate-300',
                     col.key === 'name' && onNameClick && 'cursor-pointer hover:text-primary transition-colors',
                     col.cellClass?.(row[col.key], row)
                   )}
@@ -110,8 +110,8 @@ export function StatTable({ columns, rows, totalsRow, onRowClick, onNameClick, s
                 <td
                   key={col.key}
                   className={clsx(
-                    'px-2 py-2 tabular-nums font-bold',
-                    col.key === 'name' ? 'text-left text-slate-300' : 'text-right text-white',
+                    'px-8 py-2 tabular-nums font-bold',
+                    col.key === 'name' ? 'text-left text-slate-300 sticky left-0 z-10 bg-slate-800' : 'text-center text-white',
                   )}
                 >
                   {col.fmt ? col.fmt(totalsRow[col.key]) : (totalsRow[col.key] ?? '—')}
