@@ -40,7 +40,7 @@ const PLAYER_COLS = [
   { key: 'mp',        label: 'MP',    fmt: fmtCount     },
   { key: 'sp',        label: 'SP',    fmt: fmtCount     },
   { key: 'pos_label', label: 'POS',   fmt: (v) => v ?? '—' },
-  { key: 'ver',       label: 'VER',   fmt: fmtVER,      render: (v) => <VERBadge ver={v} /> },
+  { key: 'ver',       label: 'VER',   fmt: fmtVER,      render: (v, row) => <VERBadge ver={v} position={row.pos_label} /> },
   { key: 'sa',      label: 'SA',    fmt: fmtCount     },
   { key: 'si_pct',  label: 'SRV%',  fmt: fmtPct       },
   { key: 'ace',     label: 'ACE',   fmt: fmtCount     },
@@ -509,7 +509,7 @@ export function ReportsPage() {
 
   return (
     <div>
-      <PageHeader title="Reports" />
+      <PageHeader title="Reports — Powered by Shua Stat Engine" />
 
       {/* Filters */}
       <div className="px-4 pt-4 pb-2 flex gap-3 flex-wrap">
