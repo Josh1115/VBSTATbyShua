@@ -97,8 +97,8 @@ export const TRACKABLE_STATS = [
 ];
 
 // VER position multipliers — adjust raw efficiency to account for positional opportunity.
-// Libero (1.20) and DS (1.15) face harder serve-receive and dig situations with fewer
-// high-value scoring actions, so their raw VER underrepresents contribution.
+// L (1.65) and DS (2.00) receive large boosts because they earn zero from the four
+// highest-weighted stats (K, ACE, BS, BA) and must build VER entirely from digs and passing.
 // MB (1.05) is slightly boosted because middle opportunities are fewer per set than OH/OPP.
 // S (0.90) reflects that setters accumulate assists (not kills), which are weighted lower.
 // OH/OPP (1.00) are the baseline. Adjust for your program's positional balance if needed.
@@ -108,8 +108,8 @@ export const POSITION_MULTIPLIERS = {
   RS:  1.00,
   MB:  1.05,
   S:   0.90,
-  L:   1.20,
-  DS:  1.15,
+  L:   1.65,
+  DS:  2.00,
 };
 
 // App accent colors — shared between main.jsx (CSS variable bootstrap) and SettingsPage
